@@ -341,12 +341,74 @@ int tex_bake_atlas_active(void) { return atlas_on(); }
  * (tex_bake_commit). A scene change's hundreds of bakes become a handful of
  * uploads -- per-call, a glTexSubImage2D costs ~18 us on a Mesa/i965 mobile
  * driver, and 1700 of them were the 30 ms frame at Dirt Dash's race start. */
+void tex_bake_pages_crc(void)                  /* ENG_BBLOG diagnostics: CRC of each page's CPU shadow */
+{
+    extern unsigned long crc32(unsigned long, const unsigned char *, unsigned);
+    for (int i = 0; i < ap_n; i++) {
+        apage *p = &apages[i];
+        unsigned long c = crc32(0, p->shadow, (unsigned)((size_t)ATLAS_DIM * ATLAS_DIM * 4 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (size_t)ATLAS_DIM * ATLAS_DIM * 4));
+        fprintf(stderr, "[PAGE] %d tex=%u shelf=(%d,%d,%d) nfr=%d ndr=%d crc=%08lx\n",
+                i, p->tex, p->cx, p->cy, p->row_h, p->nfr, p->ndr, c);
+    }
+}
+void tex_bake_atlas_view(int vw, int vh)       /* ENG_ATLASVIEW=<page>: draw that page over the frame */
+{
+    static int page = -2;
+    if (page == -2) { const char *e = getenv("ENG_ATLASVIEW"); page = e ? atoi(e) : -1; }
+    if (page < 0 || page >= ap_n) return;
+    glDisable(GL_BLEND); glDisable(GL_ALPHA_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, apages[page].tex);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glViewport(0, 0, vw, vh);
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0, 1, 1, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(0, 0);
+    glTexCoord2f(1, 0); glVertex2f(1, 0);
+    glTexCoord2f(1, 1); glVertex2f(1, 1);
+    glTexCoord2f(0, 1); glVertex2f(0, 1);
+    glEnd();
+    glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glDisable(GL_TEXTURE_2D);
+}
 void tex_bake_commit(GLuint tex)               /* upload tex's page if bakes dirtied it */
 {
+#ifdef __EMSCRIPTEN__
+    { static int nobake = -1;                  /* ENG_NOBAKE=1: bisect -- freeze the pages after their first upload */
+      if (nobake < 0) nobake = getenv("ENG_NOBAKE") != NULL;
+      if (nobake) { static int warned; if (!warned++) fprintf(stderr, "[BAKE] uploads frozen (ENG_NOBAKE)\n"); return; } }
+#endif
     for (int i = 0; i < ap_n; i++) {
         apage *p = &apages[i];
         if (p->tex != tex || !p->ndr) continue;
         glBindTexture(GL_TEXTURE_2D, tex);
+#ifdef __EMSCRIPTEN__
+        { static int fullup = -1;              /* ENG_FULLUP=1: bisect -- whole page every commit */
+          if (fullup < 0) fullup = getenv("ENG_FULLUP") != NULL;
+          if (fullup) {
+              glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ATLAS_DIM, ATLAS_DIM, GL_RGBA, GL_UNSIGNED_BYTE, p->shadow);
+              p->ndr = 0; p->dirty_x0 = p->dirty_y0 = ATLAS_DIM; p->dirty_x1 = p->dirty_y1 = 0;
+              return;
+          } }
+#endif
+#if defined(__EMSCRIPTEN__) || defined(TEX_BAKE_BANDS)
+        /* WebGL1 has no GL_UNPACK_ROW_LENGTH: upload full-width BANDS, whose
+         * rows are contiguous in the shadow at stride ATLAS_DIM. Wider than
+         * the dirty rects, but correct; rects would need a repack copy. */
+        if (p->ndr > 0) {
+            for (int r = 0; r < p->ndr; r++) {
+                const arect *d = &p->dr[r];
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, d->y, ATLAS_DIM, d->h, GL_RGBA, GL_UNSIGNED_BYTE,
+                                p->shadow + (size_t)d->y * ATLAS_DIM * 4);
+            }
+        } else {
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, p->dirty_y0, ATLAS_DIM, p->dirty_y1 - p->dirty_y0,
+                            GL_RGBA, GL_UNSIGNED_BYTE, p->shadow + (size_t)p->dirty_y0 * ATLAS_DIM * 4);
+        }
+#else
         glPixelStorei(GL_UNPACK_ROW_LENGTH, ATLAS_DIM);
         if (p->ndr > 0) {
             for (int r = 0; r < p->ndr; r++) {
@@ -359,6 +421,7 @@ void tex_bake_commit(GLuint tex)               /* upload tex's page if bakes dir
                             GL_RGBA, GL_UNSIGNED_BYTE, p->shadow + ((size_t)p->dirty_y0 * ATLAS_DIM + p->dirty_x0) * 4);
         }
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#endif
         p->ndr = 0; p->dirty_x0 = p->dirty_y0 = ATLAS_DIM; p->dirty_x1 = p->dirty_y1 = 0;
         return;
     }
@@ -1111,7 +1174,19 @@ static double   now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC,
 /* The budgets are in texels sized for the reference speed; a slower machine (a 1440p GTX 1660 measured 12 ns) gets proportionally less per frame,
  * a faster one is never given more than configured. The floor matters: a 1.8 GHz mobile i5 bakes cold tilemap at ~50 ns a texel, where the old
  * 0.25 floor still allowed 150k texels -- 30 ms -- in one frame (Dirt Dash's race start). Let it scale to 1/20th. */
-static double budget_scale(void) { double k = REF_NS_PER_TEXEL / ns_per_texel; return k < 0.05 ? 0.05 : k > 1.0 ? 1.0 : k; }
+static double budget_scale(void) {
+#ifdef __EMSCRIPTEN__
+    /* clock_gettime is performance.now() quantized to ~100 us in the browser:
+     * tiny bakes measure as zero or enormous, ns_per_texel inflates on the
+     * noise, and the scale collapses to its floor -- a cold scene (the castle
+     * flyover) then CANNOT bake its textures and draws black placeholder
+     * slots. The budgets are texel counts; wasm bakes fast enough to take
+     * them at face value. */
+    return 1.0;
+#else
+    double k = REF_NS_PER_TEXEL / ns_per_texel; return k < 0.05 ? 0.05 : k > 1.0 ? 1.0 : k;
+#endif
+}
 static long     g_budget_draw, g_budget_pump;
 static int      budget_env_done;
 static double   frame_spent;

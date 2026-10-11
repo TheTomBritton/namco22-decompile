@@ -31,6 +31,11 @@ static void mt_resolve(void)
     p_active_texture = (void (APIENTRY *)(GLenum))SDL_GL_GetProcAddress("glActiveTexture");
     const char *e = getenv("ENG_FOG2PASS");
     mt_state = (p_active_texture && !(e && *e == '1')) ? 1 : 0;
+#ifdef __EMSCRIPTEN__
+    /* the legacy-GL emulation's COMBINE INTERPOLATE misrenders on real GPUs
+     * (Metal: distant geometry goes black); the two-pass fog is correct */
+    mt_state = 0;
+#endif
     if (!mt_state) return;
     p_active_texture(GL_TEXTURE1);
     glGenTextures(1, &mt_dummy_tex);
@@ -56,9 +61,25 @@ int    g_eng_degen_uv_legacy = 0;
 static struct { int valid, tex_on, alpha_on, blend_on, env_scale, prio_mask, fog; GLuint tex; float frgb[3]; } qs;
 long g_bb_draws, g_bb_binds;                     /* per-run GL calls, for the FTIME line */
 static void qs_reset(void) { qs.valid = 0; qs.env_scale = -1; }   /* qs.fog stays truthful: unit 1 may really be on */
-static void qs_tex_on(int on) { if (!qs.valid || qs.tex_on != on) { if (on) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D); qs.tex_on = on; } }
+#ifdef __EMSCRIPTEN__
+static int qs_notex = -1;                  /* ENG_NOTEX=1: bisect -- flat vertex colours, no texturing */
+#endif
+static void qs_tex_on(int on) {
+#ifdef __EMSCRIPTEN__
+    if (qs_notex < 0) qs_notex = getenv("ENG_NOTEX") != NULL;
+    if (qs_notex) on = 0;
+#endif
+    if (!qs.valid || qs.tex_on != on) { if (on) glEnable(GL_TEXTURE_2D); else glDisable(GL_TEXTURE_2D); qs.tex_on = on; } }
 static void qs_bind(GLuint t) { if (!qs.valid || qs.tex != t) { glBindTexture(GL_TEXTURE_2D, t); qs.tex = t; g_bb_binds++; } }
-static void qs_alpha(int on) { if (!qs.valid || qs.alpha_on != on) { if (on) glEnable(GL_ALPHA_TEST); else glDisable(GL_ALPHA_TEST); qs.alpha_on = on; } }
+#ifdef __EMSCRIPTEN__
+static int qs_noat = -1;                   /* ENG_NOALPHATEST=1: bisect */
+#endif
+static void qs_alpha(int on) {
+#ifdef __EMSCRIPTEN__
+    if (qs_noat < 0) qs_noat = getenv("ENG_NOALPHATEST") != NULL;
+    if (qs_noat) on = 0;
+#endif
+    if (!qs.valid || qs.alpha_on != on) { if (on) glEnable(GL_ALPHA_TEST); else glDisable(GL_ALPHA_TEST); qs.alpha_on = on; } }
 static void qs_blend(int on) { if (!qs.valid || qs.blend_on != on) { if (on) { glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); } else glDisable(GL_BLEND); qs.blend_on = on; } }
 static void qs_prio_mask(int off) { if (!qs.valid || qs.prio_mask != off) { glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, off ? GL_FALSE : GL_TRUE); qs.prio_mask = off; } }
 static int qs_sc_on; static int qs_sc[4];
@@ -99,6 +120,9 @@ static void qs_env(int scale)
  * textured quads only, and only when write_prio_alpha is off. */
 static void qs_fog(int mode, const float *frgb, int scale)
 {
+#ifdef __EMSCRIPTEN__
+    if (getenv("ENG_NOFOG")) mode = 0;   /* experiment: fog off entirely */
+#endif
     /* mode 0: no fog -- unit 1 off, unit 0 as before */
     if (!mode) {
         if (qs.fog) {   /* leaving fog: unit 1 off, unit 0 rebuilt by qs_env below */
@@ -338,9 +362,31 @@ static int bb_n, bb_valid;
 static struct bbstate { GLuint tex; int env, alpha, blend, prio, tex_on, sc_on, fog; int sc[4]; float frgb[3]; int depth; } bb_run;
 static int depth_applied;                /* GL_DEPTH_TEST as this file last set it (only depth-tested runs ever turn it on) */
 
+static int bb_probe_on = -2;                 /* ENG_BBPROBE=<frame> */
+static void bb_probe(void)
+{
+    float cx = (bb_xy[0] + bb_xy[2] + bb_xy[4]) / 3.0f, cy = (bb_xy[1] + bb_xy[3] + bb_xy[5]) / 3.0f;
+    int vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+    int px = (int)cx, py = (int)cy;
+    if (px < vp[0]) px = vp[0]; if (px >= vp[0] + vp[2]) px = vp[0] + vp[2] - 1;
+    if (py < vp[1]) py = vp[1]; if (py >= vp[1] + vp[3]) py = vp[1] + vp[3] - 1;
+    unsigned char rgba[4] = { 9, 9, 9, 9 };
+    glReadPixels(px, py, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    fprintf(stderr, "[BBP] n=%d tex=%u tex_on=%d at(%d,%d) -> %u,%u,%u err=%x\n",
+            bb_n, bb_run.tex, bb_run.tex_on, px, py, rgba[0], rgba[1], rgba[2], glGetError());
+}
 static void bb_flush(void)
 {
     if (!bb_n) return;
+    { static long logframe = -2;               /* ENG_BBLOG=<frame>: print each flush's first vertices that frame */
+      if (logframe == -2) { const char *e = getenv("ENG_BBLOG"); logframe = e ? atol(e) : -1; }
+      if (logframe >= 0 && g_eng_frame == (unsigned)logframe) {
+          fprintf(stderr, "[BB] n=%d tex=%u env=%d fog=%d depth=%d xy0=(%.3f,%.3f) xy1=(%.3f,%.3f) xy2=(%.3f,%.3f) st0=(%.4f,%.4f,%.4f,%.4f) rgba0=(%.3f,%.3f,%.3f,%.3f)\n",
+                  bb_n, bb_run.tex, bb_run.env, bb_run.fog, bb_run.depth,
+                  bb_xy[0], bb_xy[1], bb_xy[2], bb_xy[3], bb_xy[4], bb_xy[5],
+                  bb_st[0], bb_st[1], bb_st[2], bb_st[3],
+                  bb_rgba[0], bb_rgba[1], bb_rgba[2], bb_rgba[3]);
+      } }
     /* re-bind the run's page OURSELVES: tex_bake's atlas_page_init (a cold bake
      * creating a page, e.g. from a quad that then clips away) binds the new page
      * behind our back, and commit() below binds only when the page is dirty --
@@ -352,6 +398,16 @@ static void bb_flush(void)
         glVertexPointer(2, GL_FLOAT, 0, bb_xy);
     } else
     glDrawArrays(GL_TRIANGLES, 0, bb_n);
+    if (bb_probe_on == -2) { const char *e = getenv("ENG_BBPROBE"); bb_probe_on = e ? atol(e) : -1; }
+    if (bb_probe_on >= 0 && g_eng_frame == (unsigned)bb_probe_on) bb_probe();
+    { static unsigned crc_last; extern void tex_bake_pages_crc(void);
+      static long crc_from = -2;
+      if (crc_from == -2) { const char *e = getenv("ENG_PAGECRC"); crc_from = e ? atol(e) : -1; }
+      if (crc_from >= 0 && g_eng_frame >= (unsigned)crc_from && g_eng_frame != crc_last) {
+          crc_last = g_eng_frame;
+          fprintf(stderr, "[PCRC] frame %u:\n", g_eng_frame);
+          tex_bake_pages_crc();
+      } }
     g_bb_draws++;
     bb_n = 0;
 }
@@ -377,7 +433,13 @@ static void bb_apply(const struct bbstate *st)
     qs_prio_mask(st->prio);
     qs_scissor(st->sc_on, st->sc);
     if (st->depth != depth_applied) {
-        if (st->depth) { glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glDepthMask(GL_TRUE); }
+        int want_depth = st->depth;
+#ifdef __EMSCRIPTEN__
+        { static int nodepth = -1;           /* ENG_NODEPTH=1: bisect -- painter's order only */
+          if (nodepth < 0) nodepth = getenv("ENG_NODEPTH") != NULL;
+          if (nodepth) want_depth = 0; }
+#endif
+        if (want_depth) { glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glDepthMask(GL_TRUE); }
         else glDisable(GL_DEPTH_TEST);
         depth_applied = st->depth;
     }
