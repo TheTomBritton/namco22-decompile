@@ -532,6 +532,7 @@ void ss22_draw(int vw, int vh)
     /* the mixer's gamma over the whole frame, once, as the hardware does at scanout */
     if (g_fog_valid && g_fog.have_gamma) eng_post_lut(g_fog.gamma, vw, vh);
     { extern void tex_bake_atlas_view(int, int); tex_bake_atlas_view(vw, vh); }
+    { extern void tex_bake_diag_frame(void); tex_bake_diag_frame(); }
 }
 
 /* ------------------------------------------------------------------ GL context helpers */
