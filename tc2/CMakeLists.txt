@@ -35,6 +35,29 @@ option(PORTABLE "Bind glibc symbols to baseline versions (runs on glibc >= 2.34)
 if(PORTABLE AND NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/include/glibc_compat.h)
 endif()
+if(EMSCRIPTEN)
+  # Browser build (emcmake cmake -S . -B build-web && cmake --build build-web): SDL2 + zlib from Emscripten's ports.
+  # The 3D picture (src/tc2_gl.c) is already shader GL, drawn on a WebGL2 context (the window asks for ES 3.0); the
+  # fixed-function leftovers (the blit, the crosshair, the menu) go through src/tc2_gl_web.c instead of legacy-GL
+  # emulation. The host presents frames from INSIDE the lifted program's stack (tc2_on_vblank), so the build needs
+  # JSPI: SDL_Delay in the frame pacer suspends the whole wasm stack and the browser paints/resumes. The frame is
+  # built inline at vblank (src/tc2_render.c): no worker thread on the web. The player's timecrs2.zip is written
+  # into MEMFS by the page before callMain (-sINVOKE_RUN=0) and unpacked by src/tc2_rom.c as on a PC.
+  add_compile_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
+  list(APPEND TC2_SRC src/tc2_gl_web.c)
+  add_link_options(
+    -sUSE_SDL=2 -sUSE_ZLIB=1
+    -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+    -sGL_ENABLE_GET_PROC_ADDRESS=1
+    -sJSPI=1
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=536870912 -sSTACK_SIZE=8388608
+    -sMODULARIZE=1 -sEXPORT_NAME=createTimeCrisis2 -sENVIRONMENT=web
+    -sINVOKE_RUN=0
+    -sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV)
+  add_executable(tc2 ${TC2_SRC})
+  target_include_directories(tc2 PRIVATE include gen src src/eng)
+  target_link_libraries(tc2 m)
+else()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 if(WIN32)
@@ -66,6 +89,7 @@ foreach(t ${TC2_TARGETS})
   endif()
   target_link_options(${t} PRIVATE ${TC2_LINK_OPTS})
 endforeach()
+endif()
 if(TARGET tc2_trace)
   target_compile_definitions(tc2_trace PRIVATE RR_TRACE)
 endif()

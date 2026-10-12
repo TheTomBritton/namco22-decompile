@@ -33,6 +33,9 @@ NK_API void                 nk_sdl_handle_grab(void);
 #ifdef NK_SDL_GL2_IMPLEMENTATION
 #include <string.h>
 #include <stdlib.h>
+#ifdef __EMSCRIPTEN__
+#include <GLES3/gl3.h>   /* the web render path below is shader GL: WebGL has no fixed function */
+#endif
 
 struct nk_sdl_device {
     struct nk_buffer cmds;
@@ -66,6 +69,39 @@ nk_sdl_device_upload_atlas(const void *image, int width, int height)
                 GL_RGBA, GL_UNSIGNED_BYTE, image);
 }
 
+#ifdef __EMSCRIPTEN__
+/* THE WEB RENDER PATH: the same nk_convert output, drawn with a small shader program and real GL buffers --
+ * WebGL2 has no client-side arrays and no fixed-function pipeline. Everything above this function is shared. */
+static GLuint nk_web_prog, nk_web_vbo, nk_web_ebo;
+static GLint nk_web_uproj, nk_web_utex;
+static int nk_web_init(void)
+{
+    if (nk_web_prog) return 1;
+    static const char *vs_src =
+        "attribute vec2 a_pos; attribute vec2 a_uv; attribute vec4 a_col;\n"
+        "uniform vec2 u_proj;\n"                                 /* 2 / window width, 2 / window height */
+        "varying vec2 v_uv; varying vec4 v_col;\n"
+        "void main() { gl_Position = vec4(a_pos.x * u_proj.x - 1.0, 1.0 - a_pos.y * u_proj.y, 0.0, 1.0); v_uv = a_uv; v_col = a_col; }\n";
+    static const char *fs_src =
+        "precision mediump float; uniform sampler2D u_tex; varying vec2 v_uv; varying vec4 v_col;\n"
+        "void main() { gl_FragColor = v_col * texture2D(u_tex, v_uv); }\n";
+    const GLuint vs = glCreateShader(GL_VERTEX_SHADER), fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(vs, 1, &vs_src, NULL); glCompileShader(vs);
+    glShaderSource(fs, 1, &fs_src, NULL); glCompileShader(fs);
+    nk_web_prog = glCreateProgram();
+    glAttachShader(nk_web_prog, vs); glAttachShader(nk_web_prog, fs);
+    glBindAttribLocation(nk_web_prog, 0, "a_pos"); glBindAttribLocation(nk_web_prog, 1, "a_uv"); glBindAttribLocation(nk_web_prog, 2, "a_col");
+    glLinkProgram(nk_web_prog);
+    GLint good = 0; glGetProgramiv(nk_web_prog, GL_LINK_STATUS, &good);
+    if (!good) { nk_web_prog = 0; return 0; }
+    glDeleteShader(vs); glDeleteShader(fs);
+    nk_web_uproj = glGetUniformLocation(nk_web_prog, "u_proj");
+    nk_web_utex = glGetUniformLocation(nk_web_prog, "u_tex");
+    glGenBuffers(1, &nk_web_vbo); glGenBuffers(1, &nk_web_ebo);
+    return 1;
+}
+#endif
+
 NK_API void
 nk_sdl_render(enum nk_anti_aliasing AA)
 {
@@ -84,6 +120,19 @@ nk_sdl_render(enum nk_anti_aliasing AA)
     scale.x = (float)display_width/(float)width;
     scale.y = (float)display_height/(float)height;
 
+#ifdef __EMSCRIPTEN__
+    if (!nk_web_init()) return;
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glViewport(0,0,(GLsizei)display_width,(GLsizei)display_height);
+    glUseProgram(nk_web_prog);
+    glUniform2f(nk_web_uproj, 2.0f / (float)width, 2.0f / (float)height);
+    glUniform1i(nk_web_utex, 0);
+    glActiveTexture(GL_TEXTURE0);
+#else
     glPushAttrib(GL_ENABLE_BIT|GL_COLOR_BUFFER_BIT|GL_TRANSFORM_BIT);
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
@@ -105,6 +154,7 @@ nk_sdl_render(enum nk_anti_aliasing AA)
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
+#endif
     {
         GLsizei vs = sizeof(struct nk_sdl_vertex);
         size_t vp = offsetof(struct nk_sdl_vertex, position);
@@ -141,6 +191,32 @@ nk_sdl_render(enum nk_anti_aliasing AA)
         nk_buffer_init_default(&ebuf);
         nk_convert(&sdl.ctx, &dev->cmds, &vbuf, &ebuf, &config);
 
+#ifdef __EMSCRIPTEN__
+        /* the vertices and indices into GL buffers; the commands index into them by byte offset */
+        glBindBuffer(GL_ARRAY_BUFFER, nk_web_vbo);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)nk_buffer_total(&vbuf), nk_buffer_memory_const(&vbuf), GL_STREAM_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, nk_web_ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)nk_buffer_total(&ebuf), nk_buffer_memory_const(&ebuf), GL_STREAM_DRAW);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, vs, (const void*)vp);
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, vs, (const void*)vt);
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, vs, (const void*)vc);
+        {
+        size_t eoff = 0;
+        nk_draw_foreach(cmd, &sdl.ctx, &dev->cmds)
+        {
+            if (!cmd->elem_count) continue;
+            glBindTexture(GL_TEXTURE_2D, (GLuint)cmd->texture.id);
+            glScissor(
+                (GLint)(cmd->clip_rect.x * scale.x),
+                (GLint)((height - (GLint)(cmd->clip_rect.y + cmd->clip_rect.h)) * scale.y),
+                (GLint)(cmd->clip_rect.w * scale.x),
+                (GLint)(cmd->clip_rect.h * scale.y));
+            glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, (const void*)eoff);
+            eoff += cmd->elem_count * sizeof(nk_draw_index);
+        }
+        }
+        (void)offset;
+#else
         /* setup vertex buffer pointer */
         {const void *vertices = nk_buffer_memory_const(&vbuf);
         glVertexPointer(2, GL_FLOAT, vs, (const void*)((const nk_byte*)vertices + vp));
@@ -161,12 +237,21 @@ nk_sdl_render(enum nk_anti_aliasing AA)
             glDrawElements(GL_TRIANGLES, (GLsizei)cmd->elem_count, GL_UNSIGNED_SHORT, offset);
             offset += cmd->elem_count;
         }
+#endif
         nk_clear(&sdl.ctx);
         nk_buffer_clear(&dev->cmds);
         nk_buffer_free(&vbuf);
         nk_buffer_free(&ebuf);
     }
 
+#ifdef __EMSCRIPTEN__
+    glDisableVertexAttribArray(0); glDisableVertexAttribArray(1); glDisableVertexAttribArray(2);
+    glBindBuffer(GL_ARRAY_BUFFER, 0); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glBindTexture(GL_TEXTURE_2D, 0);
+#else
     /* default OpenGL state */
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -184,6 +269,7 @@ nk_sdl_render(enum nk_anti_aliasing AA)
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glPopAttrib();
+#endif
 }
 
 static void

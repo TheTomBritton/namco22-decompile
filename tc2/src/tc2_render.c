@@ -598,10 +598,19 @@ void tc2_soft_raster(const tc2_built *b, uint32_t *rgba)
  * is), a screenshot waits for its own */
 static tc2_built *B[2]; static int front;           /* B[front] = the newest finished frame */
 static uint32_t frames[2][640 * 480];
-static pthread_t worker; static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int busy, started, have_frame;
 static int soft_raster = 1;                            /* 0 once the window's GPU renderer is up */
 void tc2_render_soft(int on) { soft_raster = on; }
+#ifdef __EMSCRIPTEN__
+/* the browser build is single-threaded: the frame is built inline at vblank (tc2_render_frame_end), so there is
+ * never anything to wait for and the lock pair is empty */
+static void wait_idle(void) {}
+#define R_LOCK() ((void)0)
+#define R_UNLOCK() ((void)0)
+#else
+static pthread_t worker; static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
+#define R_LOCK() pthread_mutex_lock(&mu)
+#define R_UNLOCK() pthread_mutex_unlock(&mu)
 static void *work(void *u)
 {
     (void)u;
@@ -618,13 +627,18 @@ static void *work(void *u)
     return NULL;
 }
 static void wait_idle(void) { pthread_mutex_lock(&mu); while (busy) pthread_cond_wait(&cv, &mu); pthread_mutex_unlock(&mu); }
+#endif
 
 /* at the start of vertical blank (MAME's screen_update): the other list is drawn, then the lists swap and the drawn one is emptied for the
  * C435 to fill (MAME render_run) */
 void tc2_render_frame_end(void)
 {
+#ifdef __EMSCRIPTEN__
+    if (!started) { started = 1; B[0] = calloc(1, sizeof *B[0]); B[1] = calloc(1, sizeof *B[1]); }
+#else
     if (!started) { started = 1; B[0] = calloc(1, sizeof *B[0]); B[1] = calloc(1, sizeof *B[1]); pthread_create(&worker, NULL, work, NULL); }
     wait_idle();                                          /* the previous frame is built: the back slot is free */
+#endif
     tc2_frame_state *snap = &B[!front]->fs;
     const uint8_t *c4 = tc2_vram_ptr(0x06A08000u), *pal = tc2_vram_ptr(0x06A10000u);
     memcpy(snap->c404, c4, sizeof snap->c404);
@@ -646,20 +660,26 @@ void tc2_render_frame_end(void)
     tc2_render_frames++;
     tc2_render_cur = !tc2_render_cur;
     tc2_render[tc2_render_cur].count = 0;
+#ifdef __EMSCRIPTEN__
+    build(B[!front]);                                     /* no worker on the web: build the frame right here */
+    if (soft_raster) tc2_soft_raster(B[!front], frames[!front]);
+    front = !front; have_frame = 1;
+#else
     pthread_mutex_lock(&mu); busy = 1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&mu);
+#endif
 }
 /* the newest built frame -- the GPU renderer (main thread). The worker only writes the OTHER slot, and the main thread is the only one that
  * starts a build, so the front slot is stable until the next tc2_render_frame_end */
-const tc2_built *tc2_built_latest(void) { pthread_mutex_lock(&mu); const tc2_built *b = have_frame ? B[front] : NULL; pthread_mutex_unlock(&mu); return b; }
+const tc2_built *tc2_built_latest(void) { R_LOCK(); const tc2_built *b = have_frame ? B[front] : NULL; R_UNLOCK(); return b; }
 const tc2_built *tc2_built_latest_wait(void) { if (started) wait_idle(); return tc2_built_latest(); }
 /* the newest finished software picture (0x00RRGGBB, 640 x 480) */
 void tc2_frame_rgba(uint32_t *rgba)
 {
-    pthread_mutex_lock(&mu);
+    R_LOCK();
     if (have_frame && soft_raster) memcpy(rgba, frames[front], sizeof frames[0]);
-    else if (have_frame) { pthread_mutex_unlock(&mu); tc2_gl_read(rgba); return; }
+    else if (have_frame) { R_UNLOCK(); tc2_gl_read(rgba); return; }
     else memset(rgba, 0, sizeof frames[0]);
-    pthread_mutex_unlock(&mu);
+    R_UNLOCK();
 }
 /* the picture of the frame that just ended -- screenshots: waits for it */
 void tc2_frame_rgba_wait(uint32_t *rgba) { if (started) wait_idle(); tc2_frame_rgba(rgba); }

@@ -57,13 +57,43 @@ static int load_fns(void)
 /* the ROM data, owned by src/tc2_render.c */
 void tc2_render_assets(const uint8_t **texrom, const uint32_t **tm_decoded, const uint8_t **tattr);
 
+/* THE SAME SHADERS ON BOTH TARGETS: desktop GL 3.0 (#version 130) and the browser's WebGL2 (#version 300 es).
+ * WebGL2 has no BGRA uploads and no LUMINANCE / LUMINANCE_ALPHA formats, so there the palette texture carries its
+ * bytes as-is (read .bgr: PALRGB) and the two-byte textures are RG8 with the second byte in g, not a (CH2); 300 es
+ * also has no gl_FragColor (FRAGC is a declared out). The desktop strings come out exactly as they always were. */
+#ifdef __EMSCRIPTEN__
+#define GLSL_VS "#version 300 es\n"
+#define GLSL_FS "#version 300 es\n" \
+    "precision highp float; precision highp int;\n" \
+    "out vec4 o_frag;\n" \
+    "#define FRAGC o_frag\n" \
+    "#define PALRGB bgr\n" \
+    "#define CH2 1\n"
+#define TC2_TEX_L8   GL_R8
+#define TC2_TEXF_L   GL_RED
+#define TC2_TEX_LA8  GL_RG8
+#define TC2_TEXF_LA  GL_RG
+#define TC2_TEXF_PAL GL_RGBA
+#else
+#define GLSL_VS "#version 130\n"
+#define GLSL_FS "#version 130\n" \
+    "#define FRAGC gl_FragColor\n" \
+    "#define PALRGB rgb\n" \
+    "#define CH2 3\n"
+#define TC2_TEX_L8   GL_LUMINANCE8
+#define TC2_TEXF_L   GL_LUMINANCE
+#define TC2_TEX_LA8  GL_LUMINANCE8_ALPHA8
+#define TC2_TEXF_LA  GL_LUMINANCE_ALPHA
+#define TC2_TEXF_PAL GL_BGRA
+#endif
+
 static const char *vs_poly =
-    "#version 130\n"
+    GLSL_VS
     "in vec4 a_pos; in vec3 a_uvs; in vec4 a_par; in vec4 a_clip; in vec2 a_ext;\n"
     "out vec3 v_uvs; flat out vec4 v_par; flat out vec4 v_clip; flat out vec2 v_ext;\n"
     "void main() { gl_Position = a_pos; v_uvs = a_uvs; v_par = a_par; v_clip = a_clip; v_ext = a_ext; }\n";
 static const char *fs_poly =
-    "#version 130\n"
+    GLSL_FS
     "uniform sampler2D t_rom, t_map, t_pal, t_sten, t_near, t_nearz;\n"
     "uniform int u_ex, u_scale, u_h, u_prio, u_pfade, u_ff, u_alpha, u_alpha_pen, u_near, u_depth;\n"
     "uniform float u_keep;\n"
@@ -78,7 +108,7 @@ static const char *fs_poly =
     "  if ((fl & 1) != 0) {\n"                                            /* the stencil: a 0 bit in the C412 SRAM hides the pixel */
     "    uint offs = ((ty << 6u) | (tx >> 4u)) & 0x1FFFFu;\n"
     "    vec4 s = texelFetch(t_sten, ivec2(int(offs & 511u), int(offs >> 9u)), 0);\n"
-    "    uint w = b8(s, 0) | (b8(s, 3) << 8u);\n"
+    "    uint w = b8(s, 0) | (b8(s, CH2) << 8u);\n"
     "    if (((w >> ((tx & 15u) ^ 15u)) & 1u) == 0u) discard;\n"
     "  }\n"
     "  ty += uint(v_par.z);\n"
@@ -87,7 +117,7 @@ static const char *fs_poly =
     "    if ((fl & 2) != 0 || (u_alpha != 255 && (fl & 4) != 0)) discard;\n"
     "    gl_FragDepth = clamp(0.5 + log2(max(oz, 1e-30)) / 256.0, 0.0, 1.0);\n"
     "    int e = int(v_ext.x);\n"
-    "    gl_FragColor = vec4(float(e & 255) / 255.0, float((e >> 8) & 255) / 255.0, v_ext.y / 255.0, 1.0); return;\n"
+    "    FRAGC = vec4(float(e & 255) / 255.0, float((e >> 8) & 255) / 255.0, v_ext.y / 255.0, 1.0); return;\n"
     "  }\n"
     "  if (u_depth != 0) {\n"                                             /* hidden if ANOTHER object of this band is clearly nearer here */
     "    ivec2 fp = ivec2(gl_FragCoord.xy); vec4 nn = texelFetch(t_near, fp, 0);\n"
@@ -109,25 +139,25 @@ static const char *fs_poly =
     "  uint pen = b8(texelFetch(t_rom, ivec2(int(ri & 8191u), int(ri >> 13u)), 0), 0);\n"
     "  if (u_prio != 0) {\n"                                               /* the priority target: R text-or-7, G any polygon, A last was 7 */
     "    int pv = (fl >> 3) & 7;\n"
-    "    gl_FragColor = vec4(pv == 7 ? 1.0 : 0.0, pv != 0 ? 1.0 : 0.0, 0.0, pv == 7 ? 1.0 : 0.0); return;\n"
+    "    FRAGC = vec4(pv == 7 ? 1.0 : 0.0, pv != 0 ? 1.0 : 0.0, 0.0, pv == 7 ? 1.0 : 0.0); return;\n"
     "  }\n"
     "  uint ci = pbase + ((pen >> pshift) & pmask);\n"
     "  vec4 c = texelFetch(t_pal, ivec2(int(ci & 255u), int((ci >> 8u) & 127u)), 0);\n"
-    "  ivec3 col = ivec3(c.rgb * 255.0 + 0.5);\n"
+    "  ivec3 col = ivec3(c.PALRGB * 255.0 + 0.5);\n"
     "  int sh = clamp(int(v_uvs.z), 0, 63);\n"
     "  col = (col * sh) >> 6;\n"
     "  if (u_pfade != 0) col = (col * u_pcol) >> 8;\n"
     "  if (u_ff != 255) col = (col * u_ff + u_fcol * (256 - u_ff)) >> 8;\n"
     "  bool ua = u_alpha != 255 && ((fl & 4) != 0 || int(pen) == u_alpha_pen);\n"
     "  float al = ua ? float(u_alpha) / 256.0 : ((fl & 2) != 0 ? 0.5 : 1.0);\n"
-    "  gl_FragColor = vec4(vec3(col) / 255.0, al);\n"
+    "  FRAGC = vec4(vec3(col) / 255.0, al);\n"
     "}\n";
 static const char *vs_text =
-    "#version 130\n"
+    GLSL_VS
     "in vec4 a_pos;\n"
     "void main() { gl_Position = a_pos; }\n";
 static const char *fs_text =
-    "#version 130\n"
+    GLSL_FS
     "uniform sampler2D t_mix, t_pal, t_prio, t_band;\n"
     "uniform int u_ex, u_scale, u_h, u_pass, u_fade, u_ff, u_alpha, u_amask, u_c12, u_c13;\n"
     "uniform ivec3 u_fcol;\n"
@@ -137,28 +167,28 @@ static const char *fs_text =
     "  if (px.x < 0 || px.x >= 640) {\n"      /* widescreen: a text row opaque all the way across (the cut-scenes' letterbox) continues
                                                    into the side strips in its commonest pen (b->band); anything else stays in the 4:3 centre */
     "    vec4 a = texelFetch(t_band, ivec2(px.y, 0), 0);\n"
-    "    mv = uint(a.r * 255.0 + 0.5) | (uint(a.a * 255.0 + 0.5) << 8u);\n"
+    "    mv = uint(a.r * 255.0 + 0.5) | (uint(a[CH2] * 255.0 + 0.5) << 8u);\n"
     "  } else {\n"
     "    vec4 m = texelFetch(t_mix, ivec2(px.x, px.y), 0);\n"
-    "    mv = uint(m.r * 255.0 + 0.5) | (uint(m.a * 255.0 + 0.5) << 8u);\n"
+    "    mv = uint(m.r * 255.0 + 0.5) | (uint(m[CH2] * 255.0 + 0.5) << 8u);\n"
     "  }\n"
     "  if ((mv & 0x8000u) == 0u) discard;\n"
-    "  if (u_pass == 0) { gl_FragColor = vec4(1.0, 0.0, 0.0, 0.0); return; }\n"       /* the priority target starts as 'text here' */
+    "  if (u_pass == 0) { FRAGC = vec4(1.0, 0.0, 0.0, 0.0); return; }\n"       /* the priority target starts as 'text here' */
     "  if (u_pass == 2) { vec4 p = texelFetch(t_prio, ivec2(gl_FragCoord.xy), 0); if (!(p.r > 0.5 && p.g > 0.5 && p.a < 0.5)) discard; }\n"
     "  uint pen = mv & 0x7FFFu;\n"
-    "  ivec3 col = ivec3(texelFetch(t_pal, ivec2(int(pen & 255u), int(pen >> 8u)), 0).rgb * 255.0 + 0.5);\n"
+    "  ivec3 col = ivec3(texelFetch(t_pal, ivec2(int(pen & 255u), int(pen >> 8u)), 0).PALRGB * 255.0 + 0.5);\n"
     "  if (u_fade != 0) col = (col * u_ff + u_fcol * (256 - u_ff)) >> 8;\n"
     "  bool ua = u_alpha != 255 && (int(pen & 15u) == u_amask || (int(pen) >= u_c12 && int(pen) <= u_c13));\n"
-    "  gl_FragColor = vec4(vec3(col) / 255.0, ua ? float(u_alpha) / 256.0 : 1.0);\n"
+    "  FRAGC = vec4(vec3(col) / 255.0, ua ? float(u_alpha) / 256.0 : 1.0);\n"
     "}\n";
 
 static const char *fs_gamma =
-    "#version 130\n"
+    GLSL_FS
     "uniform sampler2D t_src, t_lut;\n"
     "void main() {\n"
     "  vec3 c = texelFetch(t_src, ivec2(gl_FragCoord.xy), 0).rgb;\n"
     "  ivec3 i = ivec3(c * 255.0 + 0.5);\n"
-    "  gl_FragColor = vec4(texelFetch(t_lut, ivec2(i.r, 0), 0).r, texelFetch(t_lut, ivec2(i.g, 0), 0).g, texelFetch(t_lut, ivec2(i.b, 0), 0).b, 1.0);\n"
+    "  FRAGC = vec4(texelFetch(t_lut, ivec2(i.r, 0), 0).r, texelFetch(t_lut, ivec2(i.g, 0), 0).g, texelFetch(t_lut, ivec2(i.b, 0), 0).b, 1.0);\n"
     "}\n";
 static int ok, scale = 1, ex, fbw, fbh;                  /* ex: widescreen margin each side, in board pixels (0 = 4:3) */
 static GLuint prog_poly, prog_text, prog_gamma, vbo, quad_vbo, t_out, fbo_out, t_lut;
@@ -260,12 +290,17 @@ int tc2_gl_init(void)
     const char *e = getenv("TC2_GPU");
     if (e && *e == '0') { fprintf(stderr, "[GPU] off (TC2_GPU=0): the software picture\n"); return 0; }
     const char *sl = (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
-    int maj = 0, min = 0; if (sl) sscanf(sl, "%d.%d", &maj, &min);
     GLint maxtex = 0; glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxtex);
+#ifdef __EMSCRIPTEN__
+    /* a WebGL2 context (the window asked for ES 3.0) is always GLSL ES 3.00: only the texture size can fall short */
+    if (maxtex < 8192) { fprintf(stderr, "[GPU] needs 8192-texel textures (have %d): no picture on the web\n", maxtex); return 0; }
+#else
+    int maj = 0, min = 0; if (sl) sscanf(sl, "%d.%d", &maj, &min);
     if (maj * 100 + min < 130 || maxtex < 8192) {
         fprintf(stderr, "[GPU] needs GLSL 1.30 and 8192-texel textures (have GLSL %s, %d): the software picture\n", sl ? sl : "?", maxtex);
         return 0;
     }
+#endif
     if (!load_fns()) return 0;
     if (!(prog_poly = program(vs_poly, fs_poly)) || !(prog_text = program(vs_text, fs_text)) || !(prog_gamma = program(vs_text, fs_gamma))) return 0;
     ug[0] = p_glGetUniformLocation(prog_gamma, "t_src"); ug[1] = p_glGetUniformLocation(prog_gamma, "t_lut");
@@ -278,7 +313,7 @@ int tc2_gl_init(void)
     const uint8_t *texrom; const uint32_t *tm; const uint8_t *tattr;
     tc2_render_assets(&texrom, &tm, &tattr);
     if (!texrom) { fprintf(stderr, "[GPU] no ROM data\n"); return 0; }
-    t_rom = texture(GL_LUMINANCE8, 8192, 4096, GL_LUMINANCE, texrom);
+    t_rom = texture(TC2_TEX_L8, 8192, 4096, TC2_TEXF_L, texrom);
     uint8_t *map = malloc(0x200000u * 3);
     for (uint32_t id = 0; id < 0x200000u; id++) {
         const uint32_t tile = tm[id] >> 8;
@@ -286,10 +321,10 @@ int tc2_gl_init(void)
     }
     t_map = texture(GL_RGB8, 2048, 1024, GL_RGB, map);
     free(map);
-    t_pal = texture(GL_RGBA8, 256, 128, GL_BGRA, NULL);
-    t_sten = texture(GL_LUMINANCE8_ALPHA8, 512, 256, GL_LUMINANCE_ALPHA, NULL);
-    t_mix = texture(GL_LUMINANCE8_ALPHA8, 640, 480, GL_LUMINANCE_ALPHA, NULL);
-    t_band = texture(GL_LUMINANCE8_ALPHA8, 480, 1, GL_LUMINANCE_ALPHA, NULL);
+    t_pal = texture(GL_RGBA8, 256, 128, TC2_TEXF_PAL, NULL);
+    t_sten = texture(TC2_TEX_LA8, 512, 256, TC2_TEXF_LA, NULL);
+    t_mix = texture(TC2_TEX_LA8, 640, 480, TC2_TEXF_LA, NULL);
+    t_band = texture(TC2_TEX_LA8, 480, 1, TC2_TEXF_LA, NULL);
     t_lut = texture(GL_RGB8, 256, 1, GL_RGB, NULL);
     p_glGenBuffers(1, &vbo); p_glGenBuffers(1, &quad_vbo);
     static const float quad[] = { -1, -1, 0, 1,  1, -1, 0, 1,  1, 1, 0, 1,  -1, -1, 0, 1,  1, 1, 0, 1,  -1, 1, 0, 1 };
@@ -367,13 +402,16 @@ unsigned tc2_gl_draw(const tc2_built *b)
     GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
     const tc2_fx *f = &b->fx;
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    bind_tex(0, t_pal); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 128, GL_BGRA, GL_UNSIGNED_BYTE, b->fs.pens);
-    bind_tex(0, t_sten); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 512, 256, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, b->fs.sram);
+    bind_tex(0, t_pal); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 128, TC2_TEXF_PAL, GL_UNSIGNED_BYTE, b->fs.pens);
+    bind_tex(0, t_sten); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 512, 256, TC2_TEXF_LA, GL_UNSIGNED_BYTE, b->fs.sram);
     if (f->layers & 4) {
-        bind_tex(0, t_mix); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 640, 480, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, b->mix);
-        bind_tex(0, t_band); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 480, 1, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, b->band);
+        bind_tex(0, t_mix); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 640, 480, TC2_TEXF_LA, GL_UNSIGNED_BYTE, b->mix);
+        bind_tex(0, t_band); glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 480, 1, TC2_TEXF_LA, GL_UNSIGNED_BYTE, b->band);
     }
-    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_SCISSOR_TEST); glDisable(GL_TEXTURE_2D); glDisable(GL_ALPHA_TEST);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_SCISSOR_TEST);
+#ifndef __EMSCRIPTEN__
+    glDisable(GL_TEXTURE_2D); glDisable(GL_ALPHA_TEST);   /* fixed-function enums: not on WebGL */
+#endif
     glViewport(0, 0, fbw, fbh);
     /* 1. the background */
     p_glBindFramebuffer(GL_FRAMEBUFFER, fbo_col);
@@ -486,7 +524,17 @@ int tc2_gl_read_full(uint8_t *rgb, int cap)
     if (!ok || cap < fbw * fbh * 3) return 0;
     p_glBindFramebuffer(GL_FRAMEBUFFER, fbo_out);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+#ifdef __EMSCRIPTEN__
+    {   /* WebGL only reads back RGBA: read that and pack it down */
+        static uint8_t *tmp; static size_t tcap;
+        const size_t n = (size_t)fbw * fbh * 4;
+        if (n > tcap) { tmp = realloc(tmp, n); tcap = n; }
+        glReadPixels(0, 0, fbw, fbh, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+        for (size_t i = 0; i < (size_t)fbw * fbh; i++) { rgb[3 * i] = tmp[4 * i]; rgb[3 * i + 1] = tmp[4 * i + 1]; rgb[3 * i + 2] = tmp[4 * i + 2]; }
+    }
+#else
     glReadPixels(0, 0, fbw, fbh, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+#endif
     p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return fbw;
 }

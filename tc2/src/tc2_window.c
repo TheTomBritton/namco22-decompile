@@ -24,6 +24,9 @@
 #include "eng/eng_pace.h"
 #include "eng/ss22_input.h"
 #include "tc2_build.h"
+#ifdef __EMSCRIPTEN__
+#include "tc2_gl_web.h"   /* the web has no fixed-function GL: the blit and the crosshair draw through shaders */
+#endif
 extern const ss22_input_game tc2_input_game;
 
 int g_eng_hud_edges_on;                       /* eng_display.c's widescreen-HUD switch: no 2D HUD to move on this board yet */
@@ -83,8 +86,15 @@ int tc2_window_open(int scale, int fullscreen)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "[HOST] SDL: %s\n", SDL_GetError()); return 0; }
     { void tc2_audio_open(void); tc2_audio_open(); }                  /* the C352 (src/tc2_audio.c) */
+#ifdef __EMSCRIPTEN__
+    /* ES 3.0 = a WebGL2 context (emscripten's EGL: client version 3): src/tc2_gl.c needs texelFetch / integer shaders */
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     eng_disp_load("tc2.cfg", scale, fullscreen != 0);
     g_eng_disp_light_gun = true;                 /* a light-gun game: the Display page shows the crosshair row */
@@ -104,11 +114,16 @@ int tc2_window_open(int scale, int fullscreen)
     ss22_input_init(&tc2_input_game);                    /* the controls (keys, mouse, light gun, pads) and the menu's Controls page */
     eng_ui_add_page(ss22_input_page());
     (void)picture_rect(0);
+#ifndef __EMSCRIPTEN__
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 640, 480, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+#endif
     gpu = tc2_gl_init();
     { void tc2_render_soft(int); tc2_render_soft(!gpu); }       /* the worker then only builds the frame; the GPU draws it */
+#ifdef __EMSCRIPTEN__
+    if (!gpu) { fprintf(stderr, "[HOST] no WebGL2 GPU renderer: the web build has no software picture\n"); return 0; }
+#endif
     return 1;
 }
 
@@ -123,6 +138,9 @@ static void draw_picture(void)
         glEnable(GL_SCISSOR_TEST); glScissor(r.x - bd, dh - r.y - r.h - bd, r.w + 2 * bd, r.h + 2 * bd);
         glClearColor(1, 1, 1, 1); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST); glClearColor(0, 0, 0, 1);
     }
+#ifdef __EMSCRIPTEN__
+    web2d_blit(gpu_tex, r.x, r.y, r.w, r.h, dw, dh, eng_disp_sharp());
+#else
     glViewport(r.x, dh - r.y - r.h, r.w, r.h);
     glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, 1, 1, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
@@ -136,6 +154,7 @@ static void draw_picture(void)
     glEnd();
     glDisable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);   /* the default again: the menu (Nuklear) colours a white texel by its vertices */
+#endif
     glViewport(0, 0, dw, dh);
 }
 
@@ -152,6 +171,15 @@ static void draw_crosshair(void)
     const float x = r.x + ax * r.w, y = r.y + ay * r.h;
     const float k = r.h / 480.0f, a = 14 * k, gap = 4 * k, w = k < 1.5f ? 1.5f : k;
     glViewport(0, 0, dw, dh);
+#ifdef __EMSCRIPTEN__
+    for (int pass = 0; pass < 2; pass++) {                    /* a dark outline, then the bright cross: visible on any background */
+        const float t = (pass ? w : w + 2) * 0.5f;            /* the web draws the bars as rectangles: WebGL lines are 1 px */
+        const float rc[4][4] = { { x - a, y - t, x - gap, y + t }, { x + gap, y - t, x + a, y + t },
+                                 { x - t, y - a, x + t, y - gap }, { x - t, y + gap, x + t, y + a } };
+        if (pass) web2d_rects(&rc[0][0], 4, 1.0f, 0.25f, 0.2f, dw, dh);
+        else      web2d_rects(&rc[0][0], 4, 0, 0, 0, dw, dh);
+    }
+#else
     glMatrixMode(GL_PROJECTION); glLoadIdentity(); glOrtho(0, dw, dh, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
     glDisable(GL_TEXTURE_2D);
@@ -164,6 +192,7 @@ static void draw_crosshair(void)
         glEnd();
     }
     glColor3f(1, 1, 1); glLineWidth(1);
+#endif
 }
 
 static void screenshot(void)

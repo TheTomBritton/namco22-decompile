@@ -159,6 +159,9 @@ static inline void eng_vsync_capture(eng_vsync *v, SDL_Window *win)
     v->shown = true;
     if (v->lock && v->pnext < v->next_ns + ENG_FRAME_NS) eng_vsync_wait(v->pnext);   /* the picture goes out ON its tick: even spacing */
     if (!v->lock || v->tp >= ENG_FRAME_NS) return;  /* nothing to show twice */
+#ifdef __EMSCRIPTEN__
+    (void)win; return;   /* no re-shown pictures on the web (the redraw below is fixed-function; the canvas keeps the last picture anyway) */
+#else
     int w, h; SDL_GL_GetDrawableSize(win, &w, &h);
     if (w <= 0 || h <= 0) return;
     unsigned tw = 1, th = 1; while (tw < (unsigned)w) tw <<= 1; while (th < (unsigned)h) th <<= 1;
@@ -176,11 +179,15 @@ static inline void eng_vsync_capture(eng_vsync *v, SDL_Window *win)
     v->cw = w; v->ch = h;
     glBindTexture(GL_TEXTURE_2D, (GLuint)old);
     if (v->check) { eng_vsync_samples(v, w, h, v->sample); v->check = 1; }
+#endif
 }
 
 /* the kept picture, drawn over the whole window (fixed function; the state it touches is saved and restored) */
 static inline void eng_vsync_redraw(eng_vsync *v, SDL_Window *win)
 {
+#ifdef __EMSCRIPTEN__
+    (void)v; (void)win;   /* never reached (capture keeps no picture on the web: v->tex stays 0) */
+#else
     int w, h; SDL_GL_GetDrawableSize(win, &w, &h);
     glPushAttrib(GL_ALL_ATTRIB_BITS);
     GLint old; glGetIntegerv(GL_TEXTURE_BINDING_2D, &old);
@@ -209,6 +216,7 @@ static inline void eng_vsync_redraw(eng_vsync *v, SDL_Window *win)
         for (int i = 0; i < 16; i++) bad |= memcmp(s[i], v->sample[i], 3) != 0;
         v->log_checked++; v->log_bad += bad;
     }
+#endif
 }
 
 static inline void eng_vsync_wait(uint64_t until)
