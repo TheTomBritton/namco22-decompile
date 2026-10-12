@@ -60,6 +60,7 @@ if(EMSCRIPTEN)
 else()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+link_directories(${SDL2_LIBRARY_DIRS})   # macOS: Homebrew's /opt/homebrew/lib is not a default search path
 if(WIN32)
   set(ZLIB_USE_STATIC_LIBS ON)
 endif()

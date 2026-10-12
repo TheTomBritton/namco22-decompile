@@ -392,7 +392,9 @@ static void text_pass(const tc2_built *b, int pass)
     p_glUniform1i(ut[8], 0xFF - C4(0x15)); p_glUniform1i(ut[9], C4(0x14)); p_glUniform1i(ut[10], C4(0x12)); p_glUniform1i(ut[11], C4(0x13));
     p_glUniform3i(ut[12], C4(0x16), C4(0x17), C4(0x18)); p_glUniform1i(ut[13], ex); p_glUniform1i(ut[14], 3);
 #undef C4
-    bind_tex(0, t_mix); bind_tex(1, t_pal); bind_tex(2, t_prio); bind_tex(3, t_band);
+    /* only pass 2 samples t_prio; pass 0 RENDERS INTO it -- leaving it bound there is a
+     * framebuffer-texture feedback loop, and WebGL drops the whole draw (desktop GL lets it slide) */
+    bind_tex(0, t_mix); bind_tex(1, t_pal); bind_tex(2, pass == 2 ? t_prio : 0); bind_tex(3, t_band);
     draw_quad();
 }
 
