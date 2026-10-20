@@ -114,7 +114,7 @@ else()
   set(CS21_GL_LIB OpenGL::GL)
   set(CS21_SYS_LIB "")
 endif()
-add_executable(cs21 ${HOST_ROMZIP} ${CS21_GL_SRC} ${CS}/src/host/cs21_main.c ${CS}/src/host/s21_glutil.c ${CS}/src/host/s21_input.c ${CS}/src/host/s21_debug_page.c ${ENG}/eng_net_ui.c ${HOST_ENG} ${BOARD}
+add_executable(cs21 ${HOST_ROMZIP} ${CS21_GL_SRC} ${CS}/src/host/cs21_main.c ${CS}/src/host/s21_glutil.c ${CS}/src/host/s21_input.c ${ENG}/twin_stick.c ${CS}/src/host/s21_debug_page.c ${ENG}/eng_net_ui.c ${HOST_ENG} ${BOARD}
                     ${s21u_game_0_O} ${s21u_game_1_O})
 set_source_files_properties(${s21u_game_0_O} ${s21u_game_1_O} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
 add_dependencies(cs21 s21u_game_0_unit s21u_game_1_unit)

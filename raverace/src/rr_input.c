@@ -21,6 +21,7 @@
 #include "rr_game.h"
 #include "rr_hw.h"
 #include "rr_input.h"
+#include "twin_stick.h"
 
 rr_bind_t g_bind[RR_ACT_N];
 int g_steer_speed = 160, g_steer_return = 160;      /* MAME PORT_KEYDELTA(160) */
@@ -117,6 +118,7 @@ void rr_input_load(const char *path)
         char *eq = strchr(line, '='); if (!eq) continue;
         *eq = 0;
         char *k = trim(line), *v = trim(eq + 1);
+        if (g_rr_game && g_rr_game->twin_stick && ts_load_line(k, v)) continue;   /* the twin-stick rows (twin_stick.c) */
         if (!strcmp(k, "steer_speed")) { g_steer_speed = atoi(v); continue; }
         if (!strcmp(k, "steer_return")) { g_steer_return = atoi(v); continue; }
         if (!strcmp(k, "pad_deadzone")) { g_pad_deadzone = atoi(v); continue; }
