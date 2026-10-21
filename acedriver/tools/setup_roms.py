@@ -114,6 +114,7 @@ GAMES = {
     ],
 }
 
+OPTIONAL = {"eeprom"}                # a default EEPROM image older MAME sets lack: without it the game starts from a blank EEPROM
 EXTRA = {"c74.bin": 0x4000}          # the sound MCU BIOS, from namcoc74.zip (size only). The DSP BIOS c71.bin is built into the engine.
 MAIN_NAME = {"acedrive": "acedriver_main.bin", "victlap": "victlap_main.bin", "cybrcomm": "../cybrcomm/cybrcomm_main.bin"}   # <dir>_main.bin: the shared tools find the image by the game directory name
 DEST_NAME = {"acedrive": "extracted", "victlap": "extracted_victlap", "cybrcomm": "../cybrcomm/extracted"}   # Cyber Commando lives in its own directory
@@ -175,7 +176,7 @@ def main():
         args = args[2:]
     dest = os.path.join(ROOT, DEST_NAME.get(game, ""))
     if args == ["--check"] and game in GAMES:
-        need = [(n, sz) for _, n, _, sz, _ in GAMES[game]] + list(EXTRA.items())
+        need = [(n, sz) for r, n, _, sz, _ in GAMES[game] if r not in OPTIONAL] + list(EXTRA.items())
         ok = all(os.path.isfile(os.path.join(dest, n)) and os.path.getsize(os.path.join(dest, n)) == sz for n, sz in need)
         return 0 if ok and os.path.isfile(os.path.join(ROOT, MAIN_NAME[game])) else 1
     if game not in GAMES or not args:
@@ -187,7 +188,8 @@ def main():
     for region, name, off, size, crc in chips:
         data = found.get(name.lower())
         if data is None:
-            problems.append(f"  missing:        {name}")
+            if region not in OPTIONAL:
+                problems.append(f"  missing:        {name}")
         elif len(data) != size:
             problems.append(f"  wrong size:     {name} ({len(data)} bytes, expected {size})")
         elif zlib.crc32(data) & 0xFFFFFFFF != crc:
@@ -205,7 +207,7 @@ def main():
         return 1
 
     os.makedirs(dest, exist_ok=True)
-    names = {n for _, n, _, _, _ in chips} | set(EXTRA)
+    names = {n for _, n, _, _, _ in chips if n.lower() in found} | set(EXTRA)
     for n in sorted(names):
         with open(os.path.join(dest, n), "wb") as f:
             f.write(found[n.lower()])

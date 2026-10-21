@@ -36,7 +36,7 @@ static const eng_rom_t cc_roms[] = {
     { "rr1gam.2d", 0x100, NULL, NULL },
     { "rr1gam.3d", 0x100, NULL, NULL },
     { "rr1gam.4d", 0x100, NULL, NULL },
-    { "cy1eeprm.9e", 0x2000, NULL, NULL },
+    { "cy1eeprm.9e", 0x2000, NULL, NULL, true },   /* the default EEPROM image: MAME sets before ~0.200 lack it; without it the EEPROM starts blank */
     { "c74.bin", 0x4000, NULL, NULL },        /* the sound MCU BIOS: namcoc74.zip */
 };
 
