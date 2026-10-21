@@ -78,10 +78,12 @@ Ace Driver:  5 coin (a game costs two), X gas, Z brake, arrow keys steer, A/S sh
              Esc menu (Debug: developer screens left in the game), F12 picture.   `acedriver 2` = window scale 2.
 Cyber Commando: Cyber Sled's layout -- 5 coin (a game costs two), arrow keys drive (Shift + Left/Right strafe), E/D/S/F +
              I/K/J/L the two sticks, Z gun, X missile, C view, F2 test switch, Esc menu, F12 picture.
-             Pad: the two sticks are the cabinet's two sticks, A gun, B missile, Y view.   `cybercommando 2` = window scale 2.
+             Pad: the two sticks are the cabinet's two sticks, A gun, B missile, Y view. Esc -> Controls binds every direction of
+             both sticks and every button to keys, a pad or two joysticks.   `cybercommando 2` = window scale 2.
 Cyber Sled:  5 coin, 1 / Enter start, arrow keys drive (Shift + Left/Right strafe), E/D/S/F + I/K/J/L the two levers,
              Z gun, X missile, C view, F2 test switch, Esc menu (Online: a battle against a friend; Debug), F12 picture.
-             Pad: the two sticks are the two levers, A gun, B missile, Y view. Keys are fixed (no rebinding page yet).   `cybersled 2` = window scale 2.
+             Pad: the two sticks are the two levers, A gun, B missile, Y view. Esc -> Controls binds every direction of both
+             levers and every button to keys, a pad or two joysticks.   `cybersled 2` = window scale 2.
 Time Crisis 2: 5 coin, the mouse / a light gun aims, left button shoots, right button (or Z / X) the pedal, R reload,
              F2 test switch, F8 a white border for light guns, Esc menu, F12 picture.   `timecrisis2 2` = window scale 2.
 A game controller works too (Esc -> Controls to rebind).

@@ -336,16 +336,33 @@ part of the time. Settings live in `acedriver/ad_controls.cfg`.
 **Cyber Commando.** Mech battles with two sticks, and the same keys as Cyber Sled: `5` coin (a game costs two), the arrow keys
 drive (both sticks: Up / Down forward / back, Left / Right turn, Shift + Left / Right strafe), `E` / `D` / `S` / `F` and
 `I` / `K` / `J` / `L` move the left and right stick on their own, `Z` gun, `X` missile, `C` view, `F2` test mode, `Esc` menu. On a
-pad the two sticks are the cabinet's two sticks, A gun, B missile, Y view. The buttons can be changed in the menu (**Controls**);
-settings live in `cybrcomm/cc_controls.cfg`.
+pad the two sticks are the cabinet's two sticks, A / RT gun, B / LT missile, Y view. Everything can be changed in the menu
+(**Controls**, see [Two sticks](#two-sticks-cyber-sled-and-cyber-commando)); settings live in `cybrcomm/cc_controls.cfg`.
 
 **Cyber Sled.** A tank battle with two levers. `5` coin, `1` / Enter start, the arrow keys drive (both levers: Up / Down
 forward / back, Left / Right turn on the spot, Shift + Left / Right strafe), `E` / `D` / `S` / `F` and `I` / `K` / `J` / `L` move the
 left and right lever on their own, `Z` gun, `X` missile, `C` view, `F2` test mode, `Esc` menu. On a pad the two sticks are the two
-levers, A gun, B missile, Y view. The keys cannot be changed yet. **Online** (Esc -> Online): host or find a LAN game, or connect to
+levers, A / RT gun, B / LT missile, Y view. Everything can be changed in the menu (**Controls**, see
+[Two sticks](#two-sticks-cyber-sled-and-cyber-commando)). **Online** (Esc -> Online): host or find a LAN game, or connect to
 a server, then Ready / Start battle in the lobby -- the two machines restart linked, with free play on, and the game's own VS mode
 takes over ("WAITING FOR YOUR OPPONENT"); T opens the chat during play. Settings live in `cybsled/cs21_controls.cfg`, the operator
 settings and high scores in `cybsled/cs21.nv`.
+
+#### Two sticks (Cyber Sled and Cyber Commando)
+
+Both cabinets have two sticks, and **Esc -> Controls** binds every part of them: each stick's **up, down, left and right**
+(eight rows), the tank rows (both sticks forward / back, turn left / right, strafe), Gun, Missile, View, and in Cyber Sled also
+Coin, Start and Service. Enter on a row, then press a key or a button, push a hat, or move a stick (Esc cancels). A row can hold
+two keys, two gamepad inputs and inputs from **two joysticks**: one stick's trigger and the other's, for Gun, as on the cabinet.
+Left clears a row, Right puts its defaults back, **Reset all controls** (Cyber Sled) puts them all back.
+
+- **Two joysticks** (flight sticks, arcade sticks): bind *Left stick up* by pushing the left joystick forward, and so on for
+  each direction. An axis moves the stick in proportion; a button or a hat moves it at the cabinet's key speed. Two joysticks of
+  the **same model** are told apart by the order they were plugged in (the second shows as `#2`), so plug them in in the same
+  order each time, or rebind after swapping them.
+- **A gamepad** works as before with no setup: the left and right thumbsticks are the two sticks.
+- **Stick deadzone** (default 15%) is how far an axis must move before it counts, for sticks that do not rest exactly at the centre.
+- A joystick whose axes are bound to the sticks is never also read as a steering wheel.
 
 **Time Crisis.** A light-gun shooter. **The mouse is the gun.**
 
