@@ -289,6 +289,14 @@ void rr_tick(void)
       for (int i = 0; i < np; i++) if (frame >= pf[i] && frame <= pt[i]) rr_write(pa[i], ps[i], pv[i]); }
     for (int i = 0; i < n_steer; i++) if (frame >= (uint32_t)test_steer[i].at) g_hw.steer = (uint16_t)test_steer[i].value;
     for (int i = 0; i < n_adc; i++) if (frame >= (uint32_t)test_adc[i].at) g_hw.adc[test_adc[i].idx & 3] = (uint8_t)test_adc[i].value;
+    { static long pf = -2; if (pf == -2) { const char *e = getenv("RR_TEST_PLAY"); pf = e ? atol(e) : -1; }   /* RR_TEST_PLAY=F (twin-stick games, headless
+      * tests): from frame F the gun pulses and both sticks turn left / centre / right in turn, so a match runs (with --coin);
+      * RR_TEST_FIREONLY=1 keeps the sticks centred */
+      if (pf >= 0 && frame >= (uint32_t)pf) {
+          if (frame % 20 < 6) g_hw.inputs &= (uint16_t)~0x0001; else g_hw.inputs |= 0x0001;
+          const int t = getenv("RR_TEST_FIREONLY") ? 0 : (int)((frame / 90) % 4);
+          g_hw.adc[0] = (uint8_t)(t == 1 ? 0x47 : t == 3 ? 0xB7 : 0x7F); g_hw.adc[1] = (uint8_t)(t == 1 ? 0xB7 : t == 3 ? 0x47 : 0x7F);
+          g_hw.adc[2] = 0x7F; g_hw.adc[3] = 0x7F; } }
     if (windowed) {
         if (frame % 120 == 0) rr_hw_eeprom_save();     /* the test menu's settings and the records, once the game has changed them */
         do {
@@ -430,6 +438,13 @@ int main(int argc, char **argv)
             fprintf(stderr, "[GL] render-dump: %d quads\n", rr_gl_quads());
             return rr_gl_write_ppm(argv[i + 3], 640, 480) ? 0 : 1;
         }
+    static char last_rec[64];                     /* a played session always keeps its latest recording (and the one before): a bug a player
+                                                   * meets can be replayed exactly -- <nv prefix>_last.rec, e.g. rr_last.rec (GitHub #62) */
+    if (windowed && !rec_path && !rep_path) {
+        const char *u = strchr(g_rr_game->nv_file, '_'); const int k = u ? (int)(u - g_rr_game->nv_file) : 2;
+        char prev[64]; snprintf(last_rec, sizeof last_rec, "%.*s_last.rec", k, g_rr_game->nv_file); snprintf(prev, sizeof prev, "%.*s_prev.rec", k, g_rr_game->nv_file);
+        remove(prev); rename(last_rec, prev); rec_path = last_rec;
+    }
     if (rep_path && !rr_input_replay_open(rep_path)) return 2;
     if (rec_path && !rr_input_record_start(rec_path)) return 2;
     g_rr_gl = use_gl < 0 ? (windowed != 0) : use_gl;
@@ -493,13 +508,15 @@ int main(int argc, char **argv)
 #ifdef RR_TRACE
     rr_env_init();                         /* RR_ENV: the trace oracle's environment (dev builds) */
 #endif
-    if (windowed) rr_hw_eeprom_persist(g_rr_game->nv_file);   /* a player's session keeps its settings and records; headless runs never do */
+    if (windowed && !rep_path) rr_hw_eeprom_persist(g_rr_game->nv_file);   /* a player's session keeps its settings and records; headless runs and replays never do */
     if (freeplay >= 0) rr_hw_set_freeplay(freeplay);
     else if (windowed && g_cfg_freeplay >= 0) {        /* the saved menu choice, windowed runs only */
         rr_hw_set_freeplay(g_cfg_freeplay);
         fprintf(stderr, "[RR] %s (rr_controls.cfg)\n", g_cfg_freeplay ? "free play" : "coins required");
     }
     if (windowed) rr_hw_set_steering_motor(g_cfg_ffb_strength > 0);   /* the game only drives the motor with its own option ON */
+    if (rep_path) rr_input_replay_eeprom(g_rr.eeprom);   /* a replay: the session's own EEPROM */
+    rr_input_record_eeprom(g_rr.eeprom);                  /* a recording: the EEPROM this session starts from */
     { const char *e = getenv("RR_LINK_CABINET");              /* temporary: the lobby/config will drive this */
       if (e) rr_hw_set_link_cabinet(atoi(e)); }
     if (g_cfg_net_name[0]) rr_net_set_name(g_cfg_net_name);        /* the saved lobby name (windowed: from rr_controls.cfg) */

@@ -32,6 +32,10 @@ Hook Of The Reaper can drive a recoil gun; a pad rumbles instead. MAME does not 
 Reaper needs the game file in the hotr folder: copy hotr/timecrs2.txt into its defaultLG folder (hotr/README.txt says more).
 Display > Recoil outputs / Pad rumble on recoil turn each on or off.
 
+YOUR OWN CROSSHAIR: put PNG pictures in a "crosshairs" folder next to the game (or one named crosshair.png) and pick one in
+Display > Crosshair image ("built-in" is the game's own cross). 8 bits per channel (grey, RGB, RGBA or palette; transparency kept),
+not interlaced, at most 256 x 256; drawn at its own size on a 1080-line screen, so 64 x 64 is about the built-in cross's size.
+
 Settings are kept in tc2.cfg, the machine's settings, bookkeeping and rankings in tc2_backup.nv (the arcade board's battery RAM),
 both in the game's folder (Windows: next to the .exe; Linux: ~/.local/share/tc2/). The log of the last start is tc2.log there.
 

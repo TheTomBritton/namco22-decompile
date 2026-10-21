@@ -10,7 +10,7 @@ Wants=network-online.target
 [Service]
 User=cmcrann
 WorkingDirectory=/home/cmcrann/nmn-server
-ExecStart=/home/cmcrann/nmn-server/target/release/nmn-server --port 27750 --bind 0.0.0.0 --name "ZoneSync" --max-per-ip 8 --status-sec 300 --stats-file /home/cmcrann/nmn-server/stats.txt
+ExecStart=/home/cmcrann/nmn-server/target/release/nmn-server --port 27750 --bind 0.0.0.0 --name "ZoneSync" --max-per-ip 8 --status-sec 300 --stats-file /home/cmcrann/nmn-server/stats.txt --chat-file /home/cmcrann/nmn-server/chat.txt
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

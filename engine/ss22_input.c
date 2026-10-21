@@ -221,8 +221,11 @@ typedef struct { SDL_GameController *gc; SDL_JoystickID id; } pad_dev;
 static pad_dev pads[MAX_DEV];
 
 /* a short kick on every connected game pad (the gun's recoil solenoid; a Steam Deck's own motors included). A pad without rumble ignores it. */
+static bool pad_rumble = true;                                  /* Controls > Pad rumble on recoil (out_rumble in the cfg, as Time Crisis 2's) */
+bool ss22_input_pad_rumble(void) { return pad_rumble; }
 void ss22_input_rumble(uint16_t low, uint16_t high, uint32_t ms)
 {
+    if (!pad_rumble) return;
     for (int i = 0; i < MAX_DEV; i++) if (pads[i].gc) SDL_GameControllerRumble(pads[i].gc, low, high, ms);
 }
 
@@ -458,13 +461,15 @@ static void axis_label(int kind, char *v, size_t vn)
 static int nsw(void) { return (game->test_bit ? 1 : 0) + (game->service_bit ? 1 : 0); }
 static int nffb(void) { return game->wheel_motor ? (game->torque.addr ? 4 : 2) : game->kick_wheel ? 1 : 0; }   /* motor: Force feedback, FFB direction[, FFB centering, FFB road effects]; kick only: Force feedback */
 static int gun_flash_on = 1;                                     /* light-gun games: draw the shot flash (gun_flash in the cfg; ss22_gl.c hides it when 0) */
-static int ngun(void) { return game->trackball ? 4 : game->light_gun ? 4 : 0; }   /* Gun shot flash, Gun border, Pad aim speed, Pad aim deadzone -- or Trackball sensitivity, orientation, keys/pad steering, keys/pad smoothing */
+static int ngun(void) { return game->trackball ? 7 : game->light_gun ? 5 : game->kick_wheel ? 1 : 0; }   /* Gun shot flash, Gun border, Pad aim speed, Pad aim deadzone, Pad rumble on recoil -- or (kick_wheel: Pad rumble on recoil) -- or Trackball sensitivity, orientation, keys/pad steering, keys/pad smoothing, invert left/right, invert forward/back, swap stick axes */
 static int aim_speed = 100;                                     /* light gun: % of the default crosshair speed for the sticks / D-pad / arrow keys (aim_speed in the cfg) */
 static int aim_dz = 12;                                         /* light gun: the sticks' deadzone, % of full deflection (aim_deadzone in the cfg; 12% = the old PAD_DEADZONE) */
 static int tb_sens = 100;                                       /* trackball: % of the default counts per mouse pixel / stick deflection (tb_sens in the cfg) */
 static bool tb_direct;                                          /* trackball: MAME's "Direct" orientation instead of the cabinet's 45-degree "Natural" */
 static int tb_steer = 40;                                       /* trackball, keys / pad: the sideways roll at full deflection, % of the forward roll (tb_steer in the cfg) */
 static int tb_smooth = 2;                                       /* trackball, keys / D-pad: how a press spins the ball up and down (tb_smooth: 0 off .. 3 heavy) */
+static bool tb_inv_x, tb_inv_y;                                 /* trackball: invert left/right, forward/back -- every input: mouse, stick, keys (tb_invert_x / tb_invert_y in the cfg) */
+static bool tb_swap;                                            /* trackball: the left stick's X and Y swapped (tb_swap_stick in the cfg) */
 static const struct { const char *name; int frames; } tb_smooth_levels[] = { {"off (instant)", 1}, {"light", 6}, {"normal", 12}, {"heavy", 24} };
 void ss22_snd_trackball_direct(bool on);
 void ss22_snd_trackball(int dx, int dy);                         /* engine/ss22_snd.c */
@@ -491,8 +496,13 @@ static void pg_text(int r, char *l, size_t ln, char *v, size_t vn)
     if (r == 1 && ngun() && game->trackball) { snprintf(l, ln, "Trackball orientation"); snprintf(v, vn, "%s", tb_direct ? "direct" : "natural (the cabinet's)"); return; }
     if (r == 2 && game->trackball) { snprintf(l, ln, "Keys / pad steering"); snprintf(v, vn, "%d%%", tb_steer); return; }
     if (r == 3 && game->trackball) { snprintf(l, ln, "Keys / pad smoothing"); snprintf(v, vn, "%s", tb_smooth_levels[tb_smooth].name); return; }
-    if (r == 0 && ngun()) { snprintf(l, ln, "Gun shot flash"); snprintf(v, vn, "%s", gun_flash_on ? "ON (as the arcade)" : "OFF (no white flash)"); return; }
-    if (r == 1 && ngun()) { snprintf(l, ln, "Gun border"); if (g_eng_disp.gun_border) snprintf(v, vn, "%d%%", g_eng_disp.gun_border); else snprintf(v, vn, "OFF"); return; }
+    if (r == 4 && game->trackball) { snprintf(l, ln, "Invert left / right"); snprintf(v, vn, "%s", tb_inv_x ? "ON" : "OFF"); return; }
+    if (r == 5 && game->trackball) { snprintf(l, ln, "Invert forward / back"); snprintf(v, vn, "%s", tb_inv_y ? "ON" : "OFF"); return; }
+    if (r == 6 && game->trackball) { snprintf(l, ln, "Swap stick axes (X <-> Y)"); snprintf(v, vn, "%s", tb_swap ? "ON" : "OFF"); return; }
+    if (r == 4 && game->light_gun) { snprintf(l, ln, "Pad rumble on recoil"); snprintf(v, vn, "%s", pad_rumble ? "ON" : "OFF"); return; }
+    if (r == 0 && !game->light_gun && game->kick_wheel) { snprintf(l, ln, "Pad rumble on recoil"); snprintf(v, vn, "%s", pad_rumble ? "ON" : "OFF"); return; }
+    if (r == 0 && game->light_gun) { snprintf(l, ln, "Gun shot flash"); snprintf(v, vn, "%s", gun_flash_on ? "ON (as the arcade)" : "OFF (no white flash)"); return; }
+    if (r == 1 && game->light_gun) { snprintf(l, ln, "Gun border"); if (g_eng_disp.gun_border) snprintf(v, vn, "%d%%", g_eng_disp.gun_border); else snprintf(v, vn, "OFF"); return; }
     if (r == 2 && game->light_gun) { snprintf(l, ln, "Pad / keys aim speed"); snprintf(v, vn, "%d%%", aim_speed); return; }
     if (r == 3 && game->light_gun) { snprintf(l, ln, "Pad aim deadzone"); snprintf(v, vn, "%d%%", aim_dz); return; }
     r -= ngun();
@@ -570,6 +580,9 @@ static void pg_change(int r, int dir)
         eng_cfg_set_int("tb_smooth", tb_smooth);
         return;
     }
+    if (r == 4 && game->trackball) { tb_inv_x = !tb_inv_x; eng_cfg_set_int("tb_invert_x", tb_inv_x); return; }
+    if (r == 5 && game->trackball) { tb_inv_y = !tb_inv_y; eng_cfg_set_int("tb_invert_y", tb_inv_y); return; }
+    if (r == 6 && game->trackball) { tb_swap = !tb_swap; eng_cfg_set_int("tb_swap_stick", tb_swap); return; }
     if (r == 2 && game->light_gun) {                               /* 25..300 %: Left/Right 25% steps, Enter cycles */
         aim_speed = dir ? aim_speed + 25 * dir : (aim_speed >= 300 ? 25 : aim_speed + 25);
         if (aim_speed < 25) aim_speed = 25;
@@ -584,8 +597,9 @@ static void pg_change(int r, int dir)
         eng_cfg_set_int("aim_deadzone", aim_dz);
         return;
     }
-    if (r == 0 && ngun()) { gun_flash_on = !gun_flash_on; ss22_gl_set_gun_flash(gun_flash_on); eng_cfg_set_int("gun_flash", gun_flash_on); return; }
-    if (r == 1 && ngun()) {                                        /* Gun border: off, 1..6 % (F8 too) */
+    if ((r == 4 && game->light_gun) || (r == 0 && !game->light_gun && game->kick_wheel)) { pad_rumble = !pad_rumble; eng_cfg_set_int("out_rumble", pad_rumble); return; }
+    if (r == 0 && game->light_gun) { gun_flash_on = !gun_flash_on; ss22_gl_set_gun_flash(gun_flash_on); eng_cfg_set_int("gun_flash", gun_flash_on); return; }
+    if (r == 1 && game->light_gun) {                               /* Gun border: off, 1..6 % (F8 too) */
         if (dir < 0) { for (int k = 0; k < 6; k++) eng_disp_cycle_gun_border(); } else eng_disp_cycle_gun_border();
         return;
     }
@@ -646,9 +660,13 @@ void ss22_input_init(const ss22_input_game *g)
         if (tb_steer > 100) tb_steer = 100;
         tb_smooth = eng_cfg_int("tb_smooth", 2);
         if (tb_smooth < 0 || tb_smooth > 3) tb_smooth = 2;
+        tb_inv_x = eng_cfg_int("tb_invert_x", 0) != 0;
+        tb_inv_y = eng_cfg_int("tb_invert_y", 0) != 0;
+        tb_swap = eng_cfg_int("tb_swap_stick", 0) != 0;
     }
     bindings_load();
     raw_bindings_load();
+    pad_rumble = eng_cfg_int("out_rumble", 1) != 0;              /* Pad rumble on recoil (SS22_RUMBLE=0 in ss22_out.c still forces it off) */
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
     if (g->wheel_motor || g->kick_wheel) {
@@ -930,8 +948,9 @@ static void tb_update(const uint8_t *k)
         if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_DOWN))  kfwd -= 1;
         if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_LEFT))  kside -= 1;
         if (SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) kside += 1;
-        const double sx = tb_axis(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX));
-        const double sy = tb_axis(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
+        double sx = tb_axis(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX));
+        double sy = tb_axis(SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY));
+        if (tb_swap) { const double t = sx; sx = sy; sy = t; }    /* Swap stick axes */
         aside += (sx < 0 ? -1 : 1) * pow(fabs(sx), 1.6);
         afwd  -= sy;
         const int rt = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT), lt = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
@@ -949,6 +968,8 @@ static void tb_update(const uint8_t *k)
     side = side > 1 ? 1 : side < -1 ? -1 : side;
     dx += TB_FULL * side * tb_steer / 100.0;
     dy -= TB_FULL * fwd;
+    if (tb_inv_x) dx = -dx;                                     /* Invert left / right, Invert forward / back: every input */
+    if (tb_inv_y) dy = -dy;
     static double fx, fy;                                       /* fractions carried to the next frame */
     fx += dx; fy += dy;
     const int ix = (int)fx, iy = (int)fy;

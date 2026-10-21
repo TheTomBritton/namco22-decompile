@@ -63,6 +63,7 @@ void ss22_input_motor(uint8_t b);
 /* the crosshair: where the gun is aimed in the 4:3 game picture, 0..1 each way; false = off-screen (nothing to draw) */
 bool ss22_input_aim(float *nx, float *ny);
 void ss22_input_rumble(uint16_t low, uint16_t high, uint32_t ms);   /* a short kick on every connected pad (engine/ss22_out.c: a gun's recoil) */
+bool ss22_input_pad_rumble(void);                        /* Controls > Pad rumble on recoil */
 void ss22_input_kick(void);                             /* the handle solenoid fired: a jolt on the bound force-feedback wheel (kick_wheel games) */
 void ss22_input_kick_frame(void);                       /* once per frame: the jolt's next step (runs whoever has the cabinet's inputs) */
 void ss22_input_close(void);                            /* stop the wheel's force and let go of it (also run at exit) */

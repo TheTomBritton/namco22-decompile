@@ -148,7 +148,7 @@ static const char *fs_text =
     "  uint pen = mv & 0x7FFFu;\n"
     "  ivec3 col = ivec3(texelFetch(t_pal, ivec2(int(pen & 255u), int(pen >> 8u)), 0).rgb * 255.0 + 0.5);\n"
     "  if (u_fade != 0) col = (col * u_ff + u_fcol * (256 - u_ff)) >> 8;\n"
-    "  bool ua = u_alpha != 255 && (int(pen & 15u) == u_amask || (int(pen) >= u_c12 && int(pen) <= u_c13));\n"
+    "  bool ua = u_alpha != 255 && (int(pen & 15u) == u_amask || (int(pen & 255u) >= u_c12 && int(pen & 255u) <= u_c13));\n"
     "  gl_FragColor = vec4(vec3(col) / 255.0, ua ? float(u_alpha) / 256.0 : 1.0);\n"
     "}\n";
 

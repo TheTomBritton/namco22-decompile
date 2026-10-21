@@ -397,7 +397,7 @@ static void axis_label(int kind, char *v, size_t vn)
 
 static int nsw(void) { return (game->test_bit ? 1 : 0) + (game->service_bit ? 1 : 0); }
 static int nffb(void) { return game->wheel_motor ? (game->torque.addr ? 4 : 2) : 0; }   /* Force feedback, FFB direction[, FFB centering, FFB road effects] */
-static int gun_flash_on = 1;                                     /* light-gun games: draw the shot flash (gun_flash in the cfg; ss22_gl.c hides it when 0) */
+static int gun_flash_on = 0;                                     /* light-gun games: draw the shot flash (gun_flash in the cfg; ss22_gl.c hides it when 0) */
 static int aim_speed = 150;                                      /* the stick / D-pad / arrow-key crosshair speed, percent (aim_speed in the cfg; was 100, a bit slow) */
 static int aim_dz = 12;                                          /* the sticks' deadzone for aiming, % of full deflection (aim_deadzone in the cfg, as
                                                                    * Time Crisis 1's engine/ss22_input.c; 12% = PAD_DEADZONE exactly) */
@@ -590,7 +590,7 @@ void ss22_input_init(const ss22_input_game *g)
         aim_speed = eng_cfg_int("aim_speed", 150);
         if (aim_speed < 50) aim_speed = 50;
         if (aim_speed > 300) aim_speed = 300;
-        gun_flash_on = eng_cfg_get("gun_flash_pct") ? eng_cfg_int("gun_flash_pct", 100) : eng_cfg_int("gun_flash", 1) ? 100 : 0;
+        gun_flash_on = eng_cfg_get("gun_flash_pct") ? eng_cfg_int("gun_flash_pct", 0) : eng_cfg_int("gun_flash", 0) ? 100 : 0;   /* OFF by default (2026-10-14, the user's call): a saved choice is kept */
         if (gun_flash_on < 0) gun_flash_on = 0; if (gun_flash_on > 100) gun_flash_on = 100;
         if (getenv("ENG_GUN_FLASH")) { const int e = atoi(getenv("ENG_GUN_FLASH")); gun_flash_on = e <= 0 ? 0 : e == 1 || e > 100 ? 100 : e; }   /* tests: without touching the cfg */
         ss22_gl_set_gun_flash(gun_flash_on);

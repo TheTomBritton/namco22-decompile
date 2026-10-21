@@ -190,6 +190,7 @@ int main(int argc, char **argv)
         vmode = gldraw ? S21_OUT_GL : S21_OUT_BOTH;
         if (gldraw) s21_video_set_sw3d(false);
         { const char *e = getenv("ENG_WIDESCREEN"); if (e) g_eng_disp.wide = atoi(e) != 0; }   /* Hor+ widescreen in the GL shots (window: the cfg) */
+        { extern int g_eng_hud_edges_on; const char *e = getenv("ENG_WIDE_HUD"); if (e) g_eng_hud_edges_on = atoi(e) != 0; }   /* tests: the Widescreen HUD row (window: the cfg) */
     }
     if (shots) mkdir(shots, 0755);
     if (glshots) mkdir(glshots, 0755);

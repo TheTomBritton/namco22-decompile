@@ -13,7 +13,7 @@ where a MAME set has since renamed one (see [docs/ROM_CHECKSUMS.md](docs/ROM_CHE
 | **Prop Cycle** | 1996 | Playable, start to finish | no | `propcycl.zip` | yes | yes |
 | **Rave Racer** | 1995 | Playable | **yes**, up to 8 ([how](#playing-online)) | `raverace.zip` + `namcoc74.zip` | yes | yes |
 | **Tokyo Wars** | 1996 | Playable | no | `tokyowar.zip` | yes | yes |
-| **Dirt Dash** | 1995 | Playable, all five stages | no | `dirtdash.zip` | yes | yes |
+| **Dirt Dash** | 1995 | Playable, all five stages; optional no time limit | no | `dirtdash.zip` | yes | yes |
 | **Armadillo Racing** | 1997 | Playable; the mouse or a USB trackball is the trackball | no | `adillor.zip` | yes | yes |
 | **Time Crisis** | 1995 | Playable; mouse or light gun | no | `timecris.zip` | yes | yes |
 | **Ace Driver** | 1994 | Playable; force feedback, developer screens | no | `acedrive.zip` + `namcoc74.zip` | yes | yes |
@@ -23,13 +23,14 @@ where a MAME set has since renamed one (see [docs/ROM_CHECKSUMS.md](docs/ROM_CHE
 
 | Game | Year | Status | Online play | Game files you need | Linux | Windows |
 |---|---|---|---|---|---|---|
-| **Cyber Sled** | 1993 | Playable; developer test mode | **yes**, 2 players ([how](#playing-online)) | `cybsled.zip` + `namcoc67.zip` + `namcoc68.zip` | yes | yes |
+| **Cyber Sled** | 1993 | Playable; developer test mode, widescreen with the HUD at the edges | **yes**, 2 players ([how](#playing-online)) | `cybsled.zip` + `namcoc67.zip` + `namcoc68.zip` | yes | yes |
 
 ### System 23
 
 | Game | Year | Status | Online play | Game files you need | Linux | Windows |
 |---|---|---|---|---|---|---|
-| **Time Crisis II** | 1997 | Playable; mouse or light gun, gun recoil output ([its own README](tc2/README.md)) | no | `timecrs2.zip` | yes | yes |
+| **Time Crisis II** | 1997 | Playable; mouse or light gun, gun recoil output, play either character ([its own README](tc2/README.md)) | **yes**, 2 players, LINK PLAY ([how](#playing-online)) | `timecrs2.zip` | yes | yes |
+| **Crisis Zone** | 1999 | Playable; mouse or light gun, gun recoil output ([its own README](crszone/README.md)) | no | `crszone.zip` | yes | yes |
 
 **Are you running the same ROMs as the authors?** The checksums of every ROM file the games use are in
 [docs/ROM_CHECKSUMS.md](docs/ROM_CHECKSUMS.md), with a list in `md5sum` format for each game.
@@ -87,10 +88,10 @@ Each release on the [Releases page](https://github.com/spacestate1/namco22-decom
 | Package | For | How to install |
 |---|---|---|
 | `namco-2x-systems_VERSION_amd64.deb` | Ubuntu 22.04 or newer, Linux Mint 21 or newer, LMDE 6, Debian 12 or newer | `sudo apt install ./namco-2x-systems_*_amd64.deb` |
-| `PropCycle-x86_64.AppImage`, `RaveRacer-...`, `TokyoWars-...`, `DirtDash-...`, `ArmadilloRacing-...`, `TimeCrisis-...`, `AceDriver-...`, `CyberCommando-...`, `CyberSled-...`, `TimeCrisis2-...` | **The Steam Deck**, and any 64-bit Linux without installing anything | `chmod +x` the file and run it (on a Deck: Desktop Mode, right-click it > Add to Steam) |
+| `PropCycle-x86_64.AppImage`, `RaveRacer-...`, `TokyoWars-...`, `DirtDash-...`, `ArmadilloRacing-...`, `TimeCrisis-...`, `AceDriver-...`, `CyberCommando-...`, `CyberSled-...`, `TimeCrisis2-...`, `CrisisZone-...` | **The Steam Deck**, and any 64-bit Linux without installing anything | `chmod +x` the file and run it (on a Deck: Desktop Mode, right-click it > Add to Steam) |
 | `windows-release-VERSION.zip` | Windows 10 or 11, 64-bit | Unzip it anywhere, put the game zips in its `roms` folder, double-click the game's `.exe` |
 
-On Linux, start a game from the applications menu (or type `propcycle`, `raveracer`, `tokyowars`, `dirtdash`, `armadilloracing`, `timecrisis`, `acedriver`, `cybercommando`, `cybersled` or `timecrisis2`). The first time, it makes the folder
+On Linux, start a game from the applications menu (or type `propcycle`, `raveracer`, `tokyowars`, `dirtdash`, `armadilloracing`, `timecrisis`, `acedriver`, `cybercommando`, `cybersled`, `timecrisis2` or `crisiszone`). The first time, it makes the folder
 `~/.local/share/namco-2x-systems/<game>/roms`, tells you which zip is missing and copies any it finds in `~/Downloads`. To uninstall: `sudo apt remove namco-2x-systems`
 your game files, settings and scores stay in `~/.local/share/namco-2x-systems/`.
 **Upgrading from 0.6 or older:** the package was called `namco22`; the new one replaces it, and the games keep using your old
@@ -157,6 +158,9 @@ and checked, piece by piece, against the arcade machine running in
   program is translated to C (`tc2/gen/tc2_lifted_*.c`) and was checked instruction by instruction against MAME's; the two H8
   programs are turned into C when you build. The 3D chips, the text layer, the C352 sound chip and the JVS link are its own code
   (`tc2/`, a self-contained tree: see [tc2/README.md](tc2/README.md)).
+- **Crisis Zone**: a Namco **System 23 Evolution 2** board, run on the same System 23 code as Time Crisis II. Its MIPS program is
+  translated to C the same way (`crszone/gen/crszone_lifted_*.c`) and its two H8 programs are turned into C when you build
+  (`crszone/`: see [crszone/README.md](crszone/README.md)).
 - The sound programs of all the games are turned into C when you build,
   from your own copy of the game files.
 
@@ -199,6 +203,7 @@ acedriver/build.sh ~/Downloads/acedrive.zip ~/Downloads/namcoc74.zip       # Ace
 cybrcomm/build.sh ~/Downloads/cybrcomm.zip ~/Downloads/namcoc74.zip        # Cyber Commando
 cybsled/build.sh ~/Downloads/cybsled.zip ~/Downloads/namcoc67.zip ~/Downloads/namcoc68.zip   # Cyber Sled
 tc2/build.sh ~/Downloads/timecrs2.zip                                                    # Time Crisis 2 (then tc2/launch.sh)
+crszone/build.sh ~/Downloads/crszone.zip                                                 # Crisis Zone (then crszone/launch.sh)
 ```
 
 Rave Racer's, Tokyo Wars', Dirt Dash's, Armadillo Racing's, Time Crisis', Ace Driver's, Cyber Commando's and Cyber Sled's first builds take a few minutes
@@ -230,8 +235,8 @@ All the games run on Windows. The Windows version is built from Linux. Type:
 This makes a `windows-release` folder. Copy it to the Windows computer.
 Put the game files in its `roms` folder: `propcycl.zip` for Prop Cycle,
 `raverace.zip` and `namcoc74.zip` for Rave Racer, `tokyowar.zip` for Tokyo
-Wars, `dirtdash.zip` for Dirt Dash, `adillor.zip` for Armadillo Racing, `timecris.zip` for Time Crisis, `acedrive.zip` and `namcoc74.zip` for Ace Driver, `cybrcomm.zip` and `namcoc74.zip` for Cyber Commando, `cybsled.zip`, `namcoc67.zip` and `namcoc68.zip` for Cyber Sled.
-Then double-click **PropCycle.exe**, **RaveRacer.exe**, **TokyoWars.exe**, **DirtDash.exe**, **ArmadilloRacing.exe**, **TimeCrisis.exe**, **AceDriver.exe**, **CyberCommando.exe** or **CyberSled.exe**.
+Wars, `dirtdash.zip` for Dirt Dash, `adillor.zip` for Armadillo Racing, `timecris.zip` for Time Crisis, `acedrive.zip` and `namcoc74.zip` for Ace Driver, `cybrcomm.zip` and `namcoc74.zip` for Cyber Commando, `cybsled.zip`, `namcoc67.zip` and `namcoc68.zip` for Cyber Sled, `timecrs2.zip` for Time Crisis II, `crszone.zip` for Crisis Zone.
+Then double-click **PropCycle.exe**, **RaveRacer.exe**, **TokyoWars.exe**, **DirtDash.exe**, **ArmadilloRacing.exe**, **TimeCrisis.exe**, **AceDriver.exe**, **CyberCommando.exe**, **CyberSled.exe**, **TimeCrisis2.exe** or **CrisisZone.exe**.
 
 Building on Windows itself, and what in the code is there for Windows only:
 [docs/WINDOWS.md](docs/WINDOWS.md).
@@ -266,8 +271,9 @@ Building on Windows itself, and what in the code is there for Windows only:
 | `Esc` | Menu |
 | `F12` | Take a picture |
 
-<a id="playing-online"></a>**Playing online (Rave Racer, Cyber Sled).** Up to eight players can race together in Rave Racer
-(two in Cyber Sled: the arcade linked two cabinets), each on
+<a id="playing-online"></a>**Playing online (Rave Racer, Cyber Sled, Time Crisis II).** Up to eight players can race together in Rave Racer
+(two in Cyber Sled and Time Crisis II: the arcade linked two cabinets -- in Time Crisis II the two of you play LINK PLAY together,
+the first player as Richard (Left / Red), the second as Keith (Right / Blue)), each on
 their own computer. Open the menu with `Esc` and go to the **Online** page,
 then **Host / join a game...**:
 
@@ -283,7 +289,10 @@ Everyone in the lobby then picks **Ready**, and anyone can start the race once
 all players are ready. When the race begins the game turns free play on for
 you and gives everyone a moment to step on the gas; choose your car and wait
 for the others at the course select. Your name on the Online page is what the
-other players see.
+other players see. Chat in the lobby stays on the server for a while: whoever joins later sees the game's last 50 lines.
+
+**Playing the other side alone (Time Crisis II).** *Esc > Cabinet* picks which of the two linked cabinets your machine is:
+Left / Red plays as Richard, Right / Blue as Keith. It takes effect from the next game.
 
 **Tokyo Wars.** You command a tank in a city battle.
 
@@ -317,6 +326,9 @@ other players see.
 | `P` | Pause |
 | `F11` | Full screen |
 | `F12` | Take a picture |
+
+**No time limit:** *Esc > Dirt Dash > Time limit OFF* stops the clock, so you can drive a course as long as you like (checkpoints
+and new stages still set the time; ON is the arcade).
 
 A game controller works in all the games. In Rave Racer the keys can be
 changed in `raverace/rr_controls.cfg`; in Tokyo Wars and Dirt Dash, in the menu
@@ -388,6 +400,15 @@ the coins are put in and the choices made for you, then the gun is yours. It wor
 **No crosshair:** *Esc > Display > Crosshair* turns the red aiming
 cross off (a real light gun needs none).
 
+**Your own crosshair** (Time Crisis, Time Crisis II, Crisis Zone): put PNG pictures in a `crosshairs` folder beside the game (or one
+named `crosshair.png`), then pick one in *Esc > Display > Crosshair image*; "built-in" is the game's own cross. The picture: 8 bits per
+channel (grey, RGB, RGBA or a palette; transparency is kept), not interlaced, at most 256 x 256 pixels. It is drawn at its own size on a
+1080-line screen and scales with the window, so 64 x 64 is about the size of the built-in cross. The choice is saved.
+
+**Pad rumble** (Time Crisis, Time Crisis II, Crisis Zone, Tokyo Wars): a game pad rumbles on every shot, the way the cabinet's gun
+kicks. Turn it off with **Pad rumble on recoil**: *Esc > Display* in Time Crisis II and Crisis Zone, *Esc > Controls* in Time Crisis and
+Tokyo Wars.
+
 **For testing** (environment variables, set before starting the game): `TC_INF_TIME=1` keeps the clock from running out and
 `TC_INF_LIFE=1` gives back every life lost, so a test can reach the later scenes of any stage. They act only during a game.
 
@@ -405,13 +426,13 @@ screen says which controls choose, enter and change a value), turn it off from
 the menu to leave. A hint on the screen says how to open the menu for the first
 few seconds after the game starts, when a pad is connected.
 
-## Screen settings (Prop Cycle, Tokyo Wars, Dirt Dash and Time Crisis)
+## Screen settings (Prop Cycle, Tokyo Wars, Dirt Dash, Time Crisis, Time Crisis II and Crisis Zone)
 
 Press `Esc` and open **Display**. Your choices are saved by themselves.
 
 - **Widescreen**: turn it on to fill a wide screen. You see more of the
   world at the sides, not a stretched picture. The time and score gauges
-  move out to the corners.
+  move out to the corners (**Widescreen HUD**; in Cyber Sled too, since 2026-10-21).
 - **Window mode**: a window, or full screen.
 - **Resolution**: how many pixels the game draws. It is scaled to fit the
   window, so a smaller number runs faster on a slow computer.
@@ -431,7 +452,7 @@ Press `Esc` and open **Display**. Your choices are saved by themselves.
 - **"can't be used"**: the zip is the wrong game or version (compare your files with
   [docs/ROM_CHECKSUMS.md](docs/ROM_CHECKSUMS.md)). Prop Cycle
   needs the one called `propcycl`; Rave Racer needs `raverace` and
-  `namcoc74`; Tokyo Wars needs `tokyowar`; Dirt Dash needs `dirtdash`; Armadillo Racing needs `adillor` (World, AM2 Ver.A); Time Crisis needs `timecris` (World, TS2 Ver.B); Ace Driver needs `acedrive` (World, AD2) and `namcoc74`; Cyber Commando needs `cybrcomm` (Japan, CY1) and `namcoc74`; Cyber Sled needs `cybsled` (World, CY2), `namcoc67` and `namcoc68`.
+  `namcoc74`; Tokyo Wars needs `tokyowar`; Dirt Dash needs `dirtdash`; Armadillo Racing needs `adillor` (World, AM2 Ver.A); Time Crisis needs `timecris` (World, TS2 Ver.B); Ace Driver needs `acedrive` (World, AD2) and `namcoc74`; Cyber Commando needs `cybrcomm` (Japan, CY1) and `namcoc74`; Cyber Sled needs `cybsled` (World, CY2), `namcoc67` and `namcoc68`; Time Crisis II needs `timecrs2` (US, TSS3 Ver.B); Crisis Zone needs `crszone` (World, CSZO4 Ver.B).
 - **"still missing dt2vera.1"** (Dirt Dash): the program chips `dt2vera.1` and `dt2vera.2` were not found
   in `dirtdash.zip`. They can be at the top of the zip, in a `dirtdasha/` folder or in any other folder, or
   in a separate `dirtdasha.zip` beside it. If the message says the chip "cannot be used", it says why (wrong
@@ -439,7 +460,7 @@ Press `Esc` and open **Display**. Your choices are saved by themselves.
 - **"c71.bin is missing"**: that message is from an older version. The DSP's BIOS is built in now, so
   `c71.bin` and `namcoc71.zip` are not needed; update to a current build.
 - **Black or white screen**: update your graphics driver.
-- **Slow, or the picture stutters.** Open the game's log (`raveracer.log`, `tokyowar.log`, `dirtdash.log`, `adillor.log`, `timecris.log`, `acedriver.log`, `cybrcomm.log`,
+- **Slow, or the picture stutters.** Open the game's log (`raveracer.log`, `tokyowar.log`, `dirtdash.log`, `adillor.log`, `timecris.log`, `acedriver.log`, `cybrcomm.log`, `tc2.log`, `crszone.log`,
   `propcycl.log` beside the `.exe` on Windows; the terminal window on Linux) and look at these lines:
   - `[HOST] OpenGL: ...` (Prop Cycle: `OpenGL: ...`) names the graphics chip the game is using. It should be
     your graphics card, for example *NVIDIA GeForce RTX 3050 Ti*. If a laptop with **two** graphics chips shows the

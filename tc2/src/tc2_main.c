@@ -231,6 +231,7 @@ void tc2_on_vblank(uint32_t frame)
     { void tc2_render_frame_end(void); tc2_render_frame_end(); }   /* the picture: background, text, the 3D render list (src/tc2_render.c) */
     { void tc2_out_poll(uint16_t); uint8_t tc2_h8_outputs(void); tc2_out_poll(tc2_h8_outputs()); }   /* the gun recoil out (src/tc2_out.c) */
     { void tc2_window_frame(void); tc2_window_frame(); }
+    { void tc2_link_frame(void); tc2_link_frame(); }        /* online: the link's payloads out and in, stall-and-wait (src/tc2_link.c) */
     if (rr_frame % 300 == 0) { void tc2_backup_save(int); tc2_backup_save(0); }   /* the backup RAM to its file when it changed */
     session_rec(frame);                                     /* after the window set this frame's inputs: record them, or replay */
     gpu_gate(frame);
@@ -267,6 +268,7 @@ void tc2_host_step(uint32_t n)
     ins_total += n;
     tc2_screen_advance(n);
     { void tc2_h8_run(uint64_t); uint64_t tc2_cycles_now(void); tc2_h8_run(tc2_cycles_now()); }   /* the two H8s catch up (src/tc2_h8.c) */
+    { void tc2_link_step(void); tc2_link_step(); }                  /* the C422 link (src/tc2_link.c) */
     if (ins_total >= ins_limit) { tc2_on_exit(); exit(0); }
 }
 uint32_t tc2_until_event(void) { return tc2_screen_until_event(); }
@@ -299,6 +301,7 @@ int main(int argc, char **argv)
         }
     }
     { int tc2_load_data(const char *); if (!tc2_load_data("extracted")) return 1; }
+    if (strcmp(argv[1], "--window")) { void tc2_link_init(void); tc2_link_init(); }   /* headless: online only through $TC2_NET_* */
     { void tc2_h8_init(const char *); tc2_h8_init("extracted"); }
     { void tc2_render_init(const char *); tc2_render_init("extracted"); }
     if (getenv("TC2_NO_RASTER")) { void tc2_render_soft(int); tc2_render_soft(0); }   /* profiling: the CPU work of a GPU run (no software fill) */

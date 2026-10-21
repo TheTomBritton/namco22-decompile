@@ -18,6 +18,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <SDL.h>
+#include "rr_mem.h"
 #include "rr_game.h"
 #include "rr_hw.h"
 #include "rr_input.h"
@@ -35,6 +36,7 @@ int g_cfg_fullscreen = 0, g_cfg_scale = 2, g_cfg_scaling = 0;
  * widescreen; and the picture aspect when widescreen is off (0 stretch, 1 4:3,
  * 2 8:7, 3 16:9) */
 int g_cfg_draw = 0;          /* draw distance level 0..3 (rr_host_set_draw) */
+int g_cfg_wide_169;                  /* widescreen's shape: 0 the window's (default), 1 16:9 (saved as wide_aspect) */
 int g_cfg_fps;                       /* Display > Frame rate: pictures a second, 0 = Auto, the default (engine/eng_vsync.h) */
 int g_cfg_winmode = -1, g_cfg_res_w = 640, g_cfg_res_h = 480, g_cfg_wide = 0, g_cfg_aspect = 1;   /* scaling: 0 smooth, 1 sharp, 2 integer */            /* free_play = 0|1 in rr_controls.cfg; -1 = not set */
 /* Stick steering (GitHub #42): a GAMEPAD stick's travel past the deadzone, t in 0..1, steers t^curve of the lock -- a curve keeps
@@ -134,6 +136,7 @@ void rr_input_load(const char *path)
             else if (sscanf(v, "%dx%d", &w, &h) == 2 && w >= 320 && h >= 240) { g_cfg_res_w = w; g_cfg_res_h = h; }
             continue; }
         if (!strcmp(k, "frame_rate")) { g_cfg_fps = atoi(v); continue; }
+        if (!strcmp(k, "wide_aspect")) { g_cfg_wide_169 = !strcmp(v, "16:9"); continue; }
         if (!strcmp(k, "widescreen")) { g_cfg_wide = atoi(v) ? 1 : 0; continue; }
         if (!strcmp(k, "wide_hud")) { extern int g_eng_hud_edges_on; g_eng_hud_edges_on = atoi(v) ? 1 : 0; continue; }
         if (!strcmp(k, "draw_distance")) {
@@ -276,16 +279,37 @@ static void rep_read(void)
         else rep_next_frame = UINT32_MAX;
 }
 
+/* THE SESSION'S EEPROM: a recording made from power-on carries the image the session started from (settings, records, free play, the
+ * steering motor option) as one line `E <hex>`, so a replay is the same game; a replay loads it instead of the player's own file */
+static uint8_t rep_ee[RR_EEPROM_SIZE]; static bool rep_has_ee;
+static int hexv(int c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <= 'F' ? c - 'A' + 10 : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1; }
 bool rr_input_replay_open(const char *path)
 {
     rep_f = fopen(path, "r");
     if (!rep_f) { fprintf(stderr, "[INPUT] cannot open %s\n", path); return false; }
+    { int c, n = 0, at_line = 1, in_e = 0, hi = -1;           /* the E line, wherever it is */
+      while ((c = fgetc(rep_f)) != EOF) {
+          if (c == '\n') { at_line = 1; in_e = 0; continue; }
+          if (at_line) { in_e = c == 'E'; at_line = 0; continue; }
+          if (!in_e) continue;
+          const int v = hexv(c); if (v < 0) continue;
+          if (hi < 0) hi = v; else { if (n < (int)RR_EEPROM_SIZE) rep_ee[n++] = (uint8_t)(hi << 4 | v); hi = -1; }
+      }
+      rep_has_ee = n == (int)RR_EEPROM_SIZE;
+      rewind(rep_f); }
     rep_read();
     if (rep_next_frame == UINT32_MAX) { fprintf(stderr, "[INPUT] %s holds no input events\n", path); return false; }
     fprintf(stderr, "[INPUT] replaying %s\n", path);
     return true;
 }
 bool rr_input_replaying(void) { return rep_f != NULL; }
+bool rr_input_replay_eeprom(uint8_t *ee)
+{
+    if (!rep_has_ee) return false;
+    memcpy(ee, rep_ee, RR_EEPROM_SIZE);
+    fprintf(stderr, "[INPUT] the EEPROM from the recording\n");
+    return true;
+}
 
 bool rr_input_record_start(const char *path)
 {
@@ -296,6 +320,13 @@ bool rr_input_record_start(const char *path)
     rec_first = true;
     fprintf(stderr, "[INPUT] recording to %s\n", path);
     return true;
+}
+void rr_input_record_eeprom(const uint8_t *ee)        /* right after the boot's EEPROM is final, before the first frame */
+{
+    if (!rec_f || !rec_first) return;
+    fputc('E', rec_f); fputc(' ', rec_f);
+    for (uint32_t i = 0; i < RR_EEPROM_SIZE; i++) fprintf(rec_f, "%02X", ee[i]);
+    fputc('\n', rec_f); fflush(rec_f);
 }
 void rr_input_record_stop(void)
 {
@@ -317,6 +348,7 @@ void rr_input_frame(uint32_t frame)
         uint16_t cur[4] = { g_hw.inputs, g_hw.steer, g_hw.gas, g_hw.brake };
         if (rec_first || memcmp(cur, last, sizeof cur)) {
             fprintf(rec_f, "F %u %04X %03X %03X %03X\n", frame, cur[0], cur[1], cur[2], cur[3]);
+            fflush(rec_f);                                       /* a crash keeps everything up to it: the way to replay it */
             memcpy(last, cur, sizeof cur);
             rec_first = false;
         }
