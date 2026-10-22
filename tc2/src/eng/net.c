@@ -57,7 +57,7 @@ static void hint(const char *t, int frames) { if (G->hint) G->hint(t, frames); }
 /* ---- chat: the last lines, oldest first; CHAT is relayed by the server to every member, the sender included ---- */
 #define CHAT_LINES 64
 #define CHAT_TEXT 96
-static char chat_buf[CHAT_LINES][8 + 24 + 2 + CHAT_TEXT + 1];      /* "[HH:MM] " + "Name: text" */
+static char chat_buf[CHAT_LINES][8 + 24 + 24 + 2 + CHAT_TEXT + 1];      /* "[HH:MM] " + "Name [side]: text" */
 static int chat_n, chat_head;
 static uint32_t chat_serial;
 /* a line stamped with its time: [HH:MM], or [Mon DD] for a history line from before the last 20 hours. history = 1: CHATLOG,
@@ -365,6 +365,7 @@ bool eng_net_roster(int i, char *name, size_t n, int *ready, int *self)
     return true;
 }
 int eng_net_roster_slot(int i) { return i >= 0 && i < roster_n ? roster[i].slot : -1; }
+const char *eng_net_slot_label(int slot) { const char *l = G && G->slot_label && slot >= 0 ? G->slot_label(slot) : NULL; return l ? l : ""; }
 int eng_net_roster_count(void) { return roster_n; }
 bool eng_net_self_ready(void)
 {
@@ -591,14 +592,15 @@ static void on_message(int p_, int type, uint16_t seq, uint16_t room, const uint
         break;
     case T_CHAT:
         if (len >= 2 && p_ == proto && (st == ST_LOBBY || st == ST_SESSION)) {
-            char line[24 + 2 + CHAT_TEXT + 1], who[24] = "";
+            char line[24 + 24 + 2 + CHAT_TEXT + 1], who[24] = "";
             for (int i = 0; i < roster_n; i++) if (roster[i].slot == p[0]) snprintf(who, sizeof who, "%s", roster[i].name);
             if (!who[0]) snprintf(who, sizeof who, "P%d", p[0]);
             int n = len - 1; if (n > CHAT_TEXT) n = CHAT_TEXT;
             char tx[CHAT_TEXT + 1]; int k = 0;
             for (int i = 0; i < n; i++) if (p[1 + i] >= ' ' && p[1 + i] != 0x7F) tx[k++] = (char)p[1 + i];
             tx[k] = 0;
-            snprintf(line, sizeof line, "%s: %s", who, tx);
+            { const char *lb = eng_net_slot_label(p[0]);      /* the sender's side, so players can agree who takes which (TC2: Left/Red, Right/Blue) */
+              if (*lb) snprintf(line, sizeof line, "%s [%s]: %s", who, lb, tx); else snprintf(line, sizeof line, "%s: %s", who, tx); }
             chat_push(line);
             if (debug == 1) fprintf(stderr, "[NET] chat: %s\n", line);
         }

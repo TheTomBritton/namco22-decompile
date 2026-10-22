@@ -259,9 +259,11 @@ static void frame_in(int slot, const uint8_t *buf, uint32_t seq)
         o += n;
     }
 }
+/* the lobby's and the chat's name for a slot: the slot IS the cabinet side in the linked game (session_begin) */
+static const char *slot_label(int slot) { return slot == 0 ? "Left / Red (Richard)" : slot == 1 ? "Right / Blue (Keith)" : ""; }
 static eng_net_game net_game = {
     "t2", 1, 2, TC2_FRAME_SIZE, "TC2_NET", "game", 0,
-    session_begin, session_end, frame_out, frame_in, hint,
+    session_begin, session_end, frame_out, frame_in, hint, slot_label,
 };
 
 /* once at start-up, after the cfg is loaded: the client (inert until the menu or $TC2_NET_* connects it) */

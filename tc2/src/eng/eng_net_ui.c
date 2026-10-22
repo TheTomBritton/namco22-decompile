@@ -141,7 +141,8 @@ static void text(int r, char *label, size_t ln, char *value, size_t vn)
         char nm[24]; int rdy = 0, self = 0;
         eng_net_roster(r - C_LIST, nm, sizeof nm, &rdy, &self);
         snprintf(label, ln, "Player %d", eng_net_roster_slot(r - C_LIST) + 1);
-        snprintf(value, vn, "%s%s%s", nm, rdy ? "   ready" : "", self ? "   (you)" : "");
+        { const char *lb = eng_net_slot_label(eng_net_roster_slot(r - C_LIST));   /* the game's name for the slot: TC2's cabinet side */
+          snprintf(value, vn, "%s%s%s%s%s", nm, *lb ? "   " : "", lb, rdy ? "   ready" : "", self ? "   (you)" : ""); }
         return;
     }
     const int i = r - C_LIST - np;
@@ -397,7 +398,9 @@ static void lobby_window(struct nk_context *ctx, int ww, int wh)
         nk_layout_row_dynamic(ctx, 24, 1);
         if (joining) nk_label_colored(ctx, "Joining the room...", NK_TEXT_LEFT, nk_rgb(240, 200, 90));
         else if (sess) { char t[96]; snprintf(t, sizeof t, "In a %s%s%s", word, myroom[0] ? "  -  " : "", myroom); nk_label_colored(ctx, t, NK_TEXT_LEFT, nk_rgb(240, 200, 90)); }
-        else if (myroom[0]) { char t[96]; snprintf(t, sizeof t, "You are in:  %s   (%d/%d players)", myroom, myplayers, mymax); nk_label_colored(ctx, t, NK_TEXT_LEFT, nk_rgb(120, 220, 130)); }
+        else if (myroom[0]) { char t[160]; const char *lb = eng_net_slot_label(eng_net_slot());
+                              snprintf(t, sizeof t, "You are in:  %s   (%d/%d players)%s%s", myroom, myplayers, mymax, *lb ? "   -   you are " : "", lb);
+                              nk_label_colored(ctx, t, NK_TEXT_LEFT, nk_rgb(120, 220, 130)); }
         else nk_label_colored(ctx, hosting ? "You are hosting a LAN game" : "You are in the lobby", NK_TEXT_LEFT, nk_rgb(120, 220, 130));
         nk_layout_row_dynamic(ctx, 18, 1);
         labelf(ctx, NK_TEXT_LEFT, "%s   -   %s", hosting ? "this computer (LAN)" : (eng_net_server()[0] ? eng_net_server() : "online"), st);
@@ -417,7 +420,8 @@ static void lobby_window(struct nk_context *ctx, int ww, int wh)
                     char nm[32]; int rdy, self;
                     if (!eng_net_roster(i, nm, sizeof nm, &rdy, &self)) continue;
                     nk_layout_row_dynamic(ctx, 20, 1);
-                    labelf(ctx, NK_TEXT_LEFT, "%s%s%s", nm, self ? " (you)" : "", rdy ? "  [ready]" : "");
+                    const char *lb = eng_net_slot_label(eng_net_roster_slot(i));
+                    labelf(ctx, NK_TEXT_LEFT, "%s%s%s%s%s", nm, self ? " (you)" : "", *lb ? "  - " : "", lb, rdy ? "  [ready]" : "");
                 }
                 nk_group_end(ctx);
             }

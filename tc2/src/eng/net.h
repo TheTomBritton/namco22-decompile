@@ -41,6 +41,8 @@ typedef struct eng_net_game {
                                                             return 1 to send them, 0 = nothing to send this frame */
     void (*frame_in)(int slot, const uint8_t *buf, uint32_t frame_seq);   /* a peer's payload, newer than the last one from that slot */
     void (*hint)(const char *text, int frames);          /* a one-line message for the player (the game's on-screen hint) */
+    const char *(*slot_label)(int slot);                 /* optional: what a slot IS in this game ("Left / Red"), shown beside each player
+                                                            in the lobby and on their chat lines; NULL or "" = nothing */
 } eng_net_game;
 
 void eng_net_init(const eng_net_game *g);                /* once, before anything else; the struct must outlive the program */
@@ -66,6 +68,7 @@ int  eng_net_ping_ms(void);                              /* -1 = unknown */
 int  eng_net_roster_count(void);
 bool eng_net_roster(int i, char *name, size_t n, int *ready, int *self);   /* false past the roster */
 int  eng_net_roster_slot(int i);
+const char *eng_net_slot_label(int slot);               /* the game's name for a slot (slot_label), "" if none */
 void eng_net_set_ready(int ready);                       /* retransmitted until the roster confirms */
 bool eng_net_self_ready(void);
 bool eng_net_all_ready(void);                            /* 2+ players, every one Ready */
