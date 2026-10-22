@@ -34,6 +34,28 @@
 #include "win_gpu.h"          /* Windows: run on the discrete GPU of a two-GPU laptop (Optimus / PowerXpress) */
 
 const ss22_game *g_ss22_game;
+
+/* SS22_POKE=ADDR=VAL[:SIZE][@FROM],...: hex values written into the game's memory every frame from frame
+ * FROM (decimal; default 0 -- but the power-on RAM test fails if it is poked, so give one) -- a cheat for
+ * the scripted play-throughs (Time Crisis: lives at E00791, the area timer at E00796), so a run that
+ * cannot aim still reaches the later areas. */
+static void poke_tick(void)
+{
+    static const char *spec; static int init;
+    if (!init) { init = 1; spec = getenv("SS22_POKE"); }
+    if (!spec) return;
+    for (const char *p = spec; *p; ) {
+        unsigned a, v, sz = 1; unsigned long from = 0; int n = 0;
+        if (sscanf(p, "%x=%x%n", &a, &v, &n) < 2) break;
+        p += n;
+        if (*p == ':') sz = (unsigned)strtoul(p + 1, (char **)&p, 10);
+        if (*p == '@') from = strtoul(p + 1, (char **)&p, 10);
+        if (rr_frame >= from) rr_write(a, (int)sz, v);
+        while (*p && *p != ',') p++;
+        if (*p == ',') p++;
+    }
+}
+
 static char **g_argv;
 
 /* ENG_FTIME=1: per-frame wall-clock split, printed every 60 frames --
@@ -372,6 +394,7 @@ void rr_tick(void)
     if (pc_ring_frame >= 0 && (rr_frame == (uint32_t)pc_ring_frame || (pc_ring_frame > 0 && rr_frame > (uint32_t)pc_ring_frame && rr_frame % 300 == 0))) pc_ring_report();
 #endif
     update_inputs();
+    poke_tick();
     if (rr_frame % 120 == 0) ss22_eeprom_save();
     if (dump_every && rr_frame % dump_every == 0) dump_state();
     sweep_tick();
