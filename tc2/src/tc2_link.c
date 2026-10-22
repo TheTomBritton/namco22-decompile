@@ -152,6 +152,11 @@ void tc2_link_arm(int on)
     if (armed == (on != 0)) return;
     armed = on != 0; tx_busy = 0; txq_n = cur_n = 0; rxq_n = 0;
     if (dbg) fprintf(stderr, "[LINK] f%u C422 %s\n", rr_frame, armed ? "ARMED (the link is up)" : "unarmed (plain registers)");
+    /* A link that comes up AFTER boot (a session joined from the menu): unarmed, the driver's last "transmit" write (CONTROL = 2, a
+     * count left in +A) started nothing, so "transmit done" never came and the driver still waits for it -- it would never send again,
+     * and the partner would never see this cabinet (LINKED crossed out). Run that pending block now; its packet is partial, and the
+     * receiver's checksum drops it. Measured: a copy armed at f2070 sent 0 link frames to the end of the run without this. */
+    if (armed && reg[3] == 2 && (reg[5] & 0xFF)) tx_start();
     irq_update();
 }
 int tc2_link_armed(void) { return armed; }

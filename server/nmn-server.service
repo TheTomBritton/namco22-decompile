@@ -17,6 +17,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+# the stats and chat files live beside the binary: without this they cannot be written ("cannot write .../chat.txt")
+ReadWritePaths=/home/cmcrann/nmn-server
 
 [Install]
 WantedBy=multi-user.target
