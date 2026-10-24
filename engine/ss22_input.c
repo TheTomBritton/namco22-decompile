@@ -492,6 +492,9 @@ static void pg_text(int r, char *l, size_t ln, char *v, size_t vn)
     if (r == 2 && game->trackball) { snprintf(l, ln, "Keys / pad steering"); snprintf(v, vn, "%d%%", tb_steer); return; }
     if (r == 3 && game->trackball) { snprintf(l, ln, "Keys / pad smoothing"); snprintf(v, vn, "%s", tb_smooth_levels[tb_smooth].name); return; }
     if (r == 0 && ngun()) { snprintf(l, ln, "Gun shot flash"); snprintf(v, vn, "%s", gun_flash_on ? "ON (as the arcade)" : "OFF (no white flash)"); return; }
+#ifdef __EMSCRIPTEN__
+    if (r == 1 && ngun()) { snprintf(l, ln, "Gun border"); snprintf(v, vn, "the page's (F8)"); return; }   /* the page frames the canvas: a border here would sit inside it */
+#endif
     if (r == 1 && ngun()) { snprintf(l, ln, "Gun border"); if (g_eng_disp.gun_border) snprintf(v, vn, "%d%%", g_eng_disp.gun_border); else snprintf(v, vn, "OFF"); return; }
     if (r == 2 && game->light_gun) { snprintf(l, ln, "Pad / keys aim speed"); snprintf(v, vn, "%d%%", aim_speed); return; }
     if (r == 3 && game->light_gun) { snprintf(l, ln, "Pad aim deadzone"); snprintf(v, vn, "%d%%", aim_dz); return; }
@@ -586,6 +589,9 @@ static void pg_change(int r, int dir)
     }
     if (r == 0 && ngun()) { gun_flash_on = !gun_flash_on; ss22_gl_set_gun_flash(gun_flash_on); eng_cfg_set_int("gun_flash", gun_flash_on); return; }
     if (r == 1 && ngun()) {                                        /* Gun border: off, 1..6 % (F8 too) */
+#ifdef __EMSCRIPTEN__
+        return;                                                    /* the page's own frame (F8 there), not the engine's */
+#endif
         if (dir < 0) { for (int k = 0; k < 6; k++) eng_disp_cycle_gun_border(); } else eng_disp_cycle_gun_border();
         return;
     }

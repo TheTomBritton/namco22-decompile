@@ -445,6 +445,9 @@ static void pg_text(int r, char *l, size_t ln, char *v, size_t vn)
     if (r == 3 && nffb() > 2) { snprintf(l, ln, "FFB road effects"); snprintf(v, vn, "%d%%", ffb_road); return; }
     r -= nffb();
     if (r == 0 && ngun()) { snprintf(l, ln, "Gun shot flash"); if (gun_flash_on == 100) snprintf(v, vn, "100%% (as the arcade)"); else if (gun_flash_on) snprintf(v, vn, "%d%%", gun_flash_on); else snprintf(v, vn, "OFF (no white flash)"); return; }
+#ifdef __EMSCRIPTEN__
+    if (r == 1 && ngun()) { snprintf(l, ln, "Gun border"); snprintf(v, vn, "the page's (F8)"); return; }   /* the page frames the canvas: a border here would sit inside it */
+#endif
     if (r == 1 && ngun()) { snprintf(l, ln, "Gun border"); if (g_eng_disp.gun_border) snprintf(v, vn, "%d%%", g_eng_disp.gun_border); else snprintf(v, vn, "OFF"); return; }
     if (r == 2 && ngun()) { snprintf(l, ln, "Aim speed"); snprintf(v, vn, "%d%% (stick / keys)", aim_speed); return; }
     if (r == 3 && ngun()) {
@@ -508,6 +511,9 @@ static void pg_change(int r, int dir)
     r -= nffb();
     if (r == 0 && ngun()) { ss22_input_flash_step(dir); return; }
     if (r == 1 && ngun()) {                                        /* Gun border: off, 1..6 % (F8 too) */
+#ifdef __EMSCRIPTEN__
+        return;                                                    /* the page's own frame (F8 there), not the engine's */
+#endif
         if (dir < 0) { for (int k = 0; k < 6; k++) eng_disp_cycle_gun_border(); } else eng_disp_cycle_gun_border();
         return;
     }
