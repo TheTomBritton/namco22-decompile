@@ -375,6 +375,26 @@ void tex_bake_atlas_view(int vw, int vh)       /* ENG_ATLASVIEW=<page>: draw tha
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glDisable(GL_TEXTURE_2D);
 }
+#if defined(__EMSCRIPTEN__) || defined(TEX_BAKE_BANDS)
+/* WebGL1 has no GL_UNPACK_ROW_LENGTH: a rect's rows sit ATLAS_DIM texels apart in the shadow, so they are REPACKED into a scratch
+ * buffer and the rect uploaded alone. This used to upload full-width BANDS of the rect's rows instead -- the lesson page_dirty
+ * records, unlearnt here: a 64-texel slot sent 4096 texels a row, and every 40-90 ms frame at a Time Crisis scene change in the
+ * browser was these glTexSubImage2D calls (35-85 ms of each). A full-width rect is already contiguous and goes straight up. */
+static void upload_rect(const uint8_t *shadow, int x, int y, int w, int h)
+{
+    static uint8_t scratch[4u << 20];
+    if (w <= 0 || h <= 0) return;
+    const uint8_t *src = shadow + ((size_t)y * ATLAS_DIM + x) * 4;
+    if (w == ATLAS_DIM) { glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, src); return; }
+    const size_t row = (size_t)w * 4;
+    const int strip = (int)(sizeof scratch / row);          /* rows per upload; >= 64 while the page is <= 16384 wide */
+    for (int y0 = 0; y0 < h; y0 += strip) {
+        const int n = h - y0 < strip ? h - y0 : strip;
+        for (int k = 0; k < n; k++) memcpy(scratch + (size_t)k * row, src + (size_t)(y0 + k) * ATLAS_DIM * 4, row);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, x, y + y0, w, n, GL_RGBA, GL_UNSIGNED_BYTE, scratch);
+    }
+}
+#endif
 void tex_bake_commit(GLuint tex)               /* upload tex's page if bakes dirtied it */
 {
 #ifdef __EMSCRIPTEN__
@@ -396,18 +416,14 @@ void tex_bake_commit(GLuint tex)               /* upload tex's page if bakes dir
           } }
 #endif
 #if defined(__EMSCRIPTEN__) || defined(TEX_BAKE_BANDS)
-        /* WebGL1 has no GL_UNPACK_ROW_LENGTH: upload full-width BANDS, whose
-         * rows are contiguous in the shadow at stride ATLAS_DIM. Wider than
-         * the dirty rects, but correct; rects would need a repack copy. */
+        /* WebGL1 has no GL_UNPACK_ROW_LENGTH, so each rect is repacked and uploaded alone (upload_rect, above) */
         if (p->ndr > 0) {
             for (int r = 0; r < p->ndr; r++) {
                 const arect *d = &p->dr[r];
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, d->y, ATLAS_DIM, d->h, GL_RGBA, GL_UNSIGNED_BYTE,
-                                p->shadow + (size_t)d->y * ATLAS_DIM * 4);
+                upload_rect(p->shadow, d->x, d->y, d->w, d->h);
             }
         } else {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, p->dirty_y0, ATLAS_DIM, p->dirty_y1 - p->dirty_y0,
-                            GL_RGBA, GL_UNSIGNED_BYTE, p->shadow + (size_t)p->dirty_y0 * ATLAS_DIM * 4);
+            upload_rect(p->shadow, p->dirty_x0, p->dirty_y0, p->dirty_x1 - p->dirty_x0, p->dirty_y1 - p->dirty_y0);
         }
 #else
         glPixelStorei(GL_UNPACK_ROW_LENGTH, ATLAS_DIM);
