@@ -34,6 +34,31 @@ static SDL_Window *win;
 static SDL_GLContext glc;
 static bool paused, shot_pending, headless_open, restart_req;
 static eng_vsync vs;                               /* the frame pacer (engine/eng_vsync.h) */
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/* eng_vsync.h's browser pacing: wait for the page's next animation frame (one game frame per paint on a 60 Hz display; a faster
+ * display is paced to the board's period, a frame every period_ms). Behind after a slow frame (a texture bake), the next frames run at
+ * once until the game is back on time, as the native timer does: the paints drop those frames, the sound keeps flowing. */
+EM_ASYNC_JS(void, eng_web_wait_frame, (double period_ms), {
+  const raf = () => new Promise(r => requestAnimationFrame(r));
+  const st = Module.__engFrame || (Module.__engFrame = { next: 0, raf: 16.7, last: 0 });
+  const t0 = performance.now();
+  if (!st.next || t0 - st.next > 100) st.next = t0;   /* first frame, or a stall (a load, the menu): re-anchor, no catch-up burst */
+  st.next += period_ms;
+  if (t0 >= st.next) return;                           /* a whole frame behind: catch up */
+  await raf();
+  const t1 = performance.now();
+  if (st.last) st.raf = st.raf * 0.9 + (t1 - st.last) * 0.1;   /* the display's refresh period, smoothed */
+  st.last = t1;
+  if (st.raf < period_ms * 0.75) {                     /* > ~75 Hz display: wait out the rest of the period */
+    while (performance.now() < st.next - st.raf * 0.5) await raf();
+  } else if (t1 < st.next - period_ms) {               /* 60 Hz display runs the game at 60: never let the */
+    st.next = t1;                                      /* schedule drift ahead into a double-length frame */
+  }
+  const t2 = performance.now();                        /* a late paint is the browser's, not the game's: no catch-up */
+  if (t2 > st.next) st.next = t2;                      /* for it, or every frame after it would run unpainted */
+});
+#endif
 
 static uint64_t now_ns(void)                     /* split the scaling: counter * 1e9 overflows 64 bits (and this works on Windows too) */
 {

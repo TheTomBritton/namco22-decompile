@@ -39,6 +39,16 @@
 
 #define ENG_FRAME_NS 16693000ull                    /* 1 / 59.906 Hz, 25.6 MHz / 814 / 525 */
 
+#ifdef __EMSCRIPTEN__
+/* THE BROWSER: a swap never blocks, and the canvas is only shown when the page next paints. A timer-paced frame lands at a phase that
+ * drifts against the display's (59.906 against 60 Hz: a whole frame every ~10 s); near the boundary two frames finish inside one paint
+ * (one never seen) and the next paint shows the same picture again -- judder for seconds at a time, worse on a slower machine (measured
+ * in 30 s of Time Crisis attract on an M2: 151 of 1797 paints wrong, judder in 12 of 29 seconds). AUTO waits for the page's next
+ * animation frame instead: one game frame per paint on a 60 Hz display (0.16% fast; audio_out's resampler takes that up), the board's
+ * period on a faster one. Defined once, in the host (EM_ASYNC_JS: JSPI suspends the wasm stack there). */
+void eng_web_wait_frame(double period_ms);
+#endif
+
 static const int eng_vsync_rates[] = { 0, 24, 30, 50, 60, 75, 90, 120, 144, 165, 240 };   /* 0 = Auto, the default (the display's rate; 60 on a 60 Hz display) */
 #define ENG_VSYNC_60 60                             /* one picture per game frame */
 #define ENG_VSYNC_DEFAULT 0                         /* Auto (on a 60 Hz display: 60) */
@@ -66,6 +76,9 @@ static inline const char *eng_vsync_mode(const eng_vsync *v)
 {
     static char b[64];
     if (v->lock) { snprintf(b, sizeof b, "%s %d pictures/s%s (game 59.906 Hz)", v->choice == 0 ? "Auto: the display's" : "locked at", v->lock, v->vsync ? ", vsync" : ""); return b; }
+#ifdef __EMSCRIPTEN__
+    return "paced on the page's paints (requestAnimationFrame)";
+#endif
     return v->vsync ? "vsync" : "timer-paced at 59.906 Hz";
 }
 
@@ -246,6 +259,11 @@ static inline void eng_vsync_after_frame(eng_vsync *v, SDL_Window *win)
 {
     if (!v->lock) {                                  /* AUTO */
         if (v->shown) v->log_pics++;
+#ifdef __EMSCRIPTEN__
+        eng_web_wait_frame((double)ENG_FRAME_NS / 1e6);
+        eng_vsync_log(v);
+        return;
+#endif
         if (v->vsync) {
             if (v->vs_frames++ == 10) v->vs_t0 = eng_vsync_ns();
             if (v->vs_frames == 60) {
