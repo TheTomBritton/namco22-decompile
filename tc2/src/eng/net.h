@@ -73,6 +73,7 @@ void eng_net_set_ready(int ready);                       /* retransmitted until 
 bool eng_net_self_ready(void);
 bool eng_net_all_ready(void);                            /* 2+ players, every one Ready */
 void eng_net_request_start(void);                        /* refused (a note in the status) until everyone is Ready */
+void eng_net_set_autostart(int n);                      /* as <P>_AUTOSTART: 0 off, 1 = Ready + START once 2+ players sat in the lobby ~2 s, N>=2 = once N players */
 
 /* rooms: the list of THIS game's rooms refreshes every 2 s in the lobby */
 int  eng_net_room_count(void);

@@ -111,6 +111,7 @@ static int pend_ready, ready_val; static uint16_t ready_seq; static uint32_t rea
 static int pend_start; static uint16_t start_seq; static uint32_t start_tx;
 static int ping_ms = -1;
 static int autostart = -1, debug = -1; static uint32_t autostart_t0;
+void eng_net_set_autostart(int n) { autostart = n; autostart_t0 = 0; }   /* the game: as <P>_AUTOSTART, from code (the one-click local two-player start) */
 static uint32_t n_ftx, n_frx, n_roster, n_poll;
 static uint8_t last_frame[9 + ENG_NET_MAX_FRAME]; static int have_last_frame;   /* our newest FRAME payload (stall-and-wait resends it) */
 
@@ -298,6 +299,10 @@ bool eng_net_connect(void)
     ping_ms = -1;
     proto = 2; my_room = 0;
     hello_room_sel = 0; hello_room_name[0] = 0; switching = 0; rooms_n = 0;
+    { const char *r = envs("HELLO_ROOM");             /* headless tests on a public server: <P>_HELLO_ROOM=new[:name]|<id> picks the room IN the
+                                                   * first HELLO, so a test never passes through the room the server would pick (a player's) */
+      if (r && !strncmp(r, "new", 3)) { hello_room_sel = -1; snprintf(hello_room_name, sizeof hello_room_name, "%s", r[3] == ':' ? r + 4 : ""); }
+      else if (r && atoi(r) > 0) hello_room_sel = atoi(r); }
     sock_open();
     if (sock == ENG_SOCK_BAD) { snprintf(note, sizeof note, "socket failed"); return false; }
     set_state(ST_CONNECTING);
@@ -576,7 +581,7 @@ static void on_message(int p_, int type, uint16_t seq, uint16_t room, const uint
         switching = 0;
         my_slot = p[0];
         roster_update(p, len, ro);
-        fprintf(stderr, "[NET] joined %s as slot %d ('%s')%s\n", srv_text, my_slot, my_name, proto == 1 ? " [RRN1]" : "");
+        fprintf(stderr, "[NET] joined %s as slot %d ('%s') in room %u%s\n", srv_text, my_slot, my_name, (unsigned)my_room, proto == 1 ? " [RRN1]" : "");
         set_state(ST_LOBBY);
         break; }
     case T_ROSTER:

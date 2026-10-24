@@ -35,7 +35,10 @@
 #include "eng_net_ui.h"
 #include "eng_nk.h"
 
-enum { R_WINDOW, R_SERVER, R_NAME, R_CONNECT, R_STATUS, R_HOST, R_FIND, R_FIXED };
+enum { R_WINDOW, R_SERVER, R_NAME, R_CONNECT, R_STATUS, R_HOST, R_FIND, R_LOCAL2P, R_FIXED };
+/* a game's one-click "second player on this computer" (Time Crisis 2: src/tc2_link.c): a row here and a button in the Online window */
+static bool (*local2p_fn)(char *msg, size_t n); static const char *local2p_label, *local2p_note; static char local2p_msg[200];
+void eng_net_ui_set_local2p(bool (*start)(char *msg, size_t n), const char *label, const char *note) { local2p_fn = start; local2p_label = label; local2p_note = note; }
 enum { C_READY = R_FIXED, C_START, C_SAY, C_NEWROOM, C_LIST };     /* connected rows; C_LIST = the first player row */
 enum { E_NONE, E_SERVER, E_NAME, E_SAY, E_ROOM };
 
@@ -103,6 +106,7 @@ static bool has_value(int r) { (void)r; return false; }
 static bool enabled(int r)
 {
     if (r == R_STATUS) return true;
+    if (r == R_LOCAL2P) return local2p_fn != NULL;
     if (eng_net_connected()) {
         if (r == C_START) return eng_net_all_ready();
         if (r >= C_LIST && r < C_LIST + nplayers()) return false;   /* player rows are information */
@@ -123,6 +127,7 @@ static void text(int r, char *label, size_t ln, char *value, size_t vn)
     case R_STATUS: snprintf(label, ln, "Status"); eng_net_status(value, vn); return;
     case R_HOST: snprintf(label, ln, "%s", eng_net_hosting() ? "Stop hosting" : "Host a LAN game"); return;
     case R_FIND: snprintf(label, ln, "Find LAN games"); snprintf(value, vn, "%s", eng_net_discovering() ? "searching..." : ""); return;
+    case R_LOCAL2P: snprintf(label, ln, "%s", local2p_label ? local2p_label : "Second player on this computer"); snprintf(value, vn, "%s", local2p_fn ? (local2p_note ? local2p_note : "") : "(not in this game)"); return;
     }
     if (!eng_net_connected()) {
         char lb[96];
@@ -168,6 +173,7 @@ static void change(int r, int dir)
     case R_STATUS: return;
     case R_HOST: if (eng_net_hosting()) eng_net_host_stop(); else eng_net_host_start(); return;
     case R_FIND: eng_net_discover(); return;
+    case R_LOCAL2P: if (local2p_fn) { local2p_fn(local2p_msg, sizeof local2p_msg); eng_ui_set_hint(local2p_msg, 600); } return;
     }
     if (!eng_net_connected()) {
         char ad[64];
@@ -192,6 +198,7 @@ static void notes(void (*line)(const char *fmt, ...))
     const int n = eng_net_chat_count();
     char ln[160];
     for (int i = n > 6 ? n - 6 : 0; i < n; i++) if (eng_net_chat_line(i, ln, sizeof ln)) line("%s", ln);
+    if (local2p_msg[0]) line("%s", local2p_msg);
     if (!n) line("%s", eng_net_connected() ? "(chat: Say)" : "Online play: Connect to a server, or Host / Find a LAN game.");
 }
 
@@ -343,6 +350,15 @@ static void online_window(struct nk_context *ctx, int ww, int wh)
             if (green_button(ctx, "Join") && eng_net_set_server(ad)) { wstop(); eng_net_connect(); }
         }
         if (!eng_net_discovering() && eng_net_found_count() == 0) { nk_layout_row_dynamic(ctx, 18, 1); nk_label(ctx, "(no LAN games found yet)", NK_TEXT_LEFT); }
+        if (local2p_fn) {                                         /* the one-click local two-player start (Time Crisis 2: two guns, two windows) */
+            nk_layout_row_dynamic(ctx, 34, 1);
+            if (green_button(ctx, local2p_label ? local2p_label : "Second player on this computer")) {
+                wstop();
+                if (local2p_fn(local2p_msg, sizeof local2p_msg)) { win_open = false; eng_ui_set_hint(local2p_msg, 600); }
+                snprintf(dlg_msg, sizeof dlg_msg, "%.95s", local2p_msg);
+            }
+            if (local2p_note) { nk_layout_row_dynamic(ctx, 18, 1); nk_label(ctx, local2p_note, NK_TEXT_LEFT); }
+        }
 
         nk_layout_row_dynamic(ctx, 10, 1); nk_spacing(ctx, 1);
         nk_layout_row_dynamic(ctx, 20, 1);

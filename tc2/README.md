@@ -33,7 +33,9 @@ RAM (settings and rankings) saved between sessions, widescreen, any internal res
 your own crosshair picture (PNG files in a `crosshairs/` folder beside the game, Display > Crosshair image).
 Two players: the menu's **Cabinet** page picks your side (Left/Red = Richard, Right/Blue = Keith), and the **Online** page links
 two copies over the internet (zonesync.net) or a LAN for the arcade's LINK PLAY co-op -- the twin cabinets' C422 link, which MAME
-does not emulate.
+does not emulate. **Two guns on one PC**: Online > "Second player on this computer" opens a second copy (one monitor each, or side by
+side) that joins by itself; Controls > "Gun device" gives each copy its own gun, read directly from the device (Linux evdev, Windows
+Raw Input) instead of the system pointer that merges them.
 
 ## Beyond MAME
 

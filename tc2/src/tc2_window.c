@@ -26,6 +26,8 @@
 #include "eng/eng_crosshair.h"
 #include "eng/eng_pace.h"
 #include "eng/ss22_input.h"
+#include "eng/ss22_host.h"
+#include "eng/eng_rawptr.h"
 #include "tc2_build.h"
 #include "tc2_game.h"
 extern const ss22_input_game tc2_input_game;
@@ -78,13 +80,106 @@ bool ss22_host_pointer(float *nx, float *ny, bool *inside)
     return true;
 }
 
+/* THE GUN ON ITS OWN DEVICE (src/eng/eng_rawptr.h, Controls > Gun device): the device's space mapped onto the picture. An absolute device
+ * (a light gun) reports 0..1 over its space -- Controls > Gun mapping says what that space is: the whole desktop (every monitor, what the
+ * system pointer does with it: the default), the window's monitor (a gun mapped to one output), or the window itself. A relative mouse
+ * moves a point kept inside the window. Wayland tells no window position: the window is taken to be at its monitor's origin (exact in
+ * fullscreen; windowed, use "this window" or fullscreen). */
+static int gun_map;
+void ss22_host_set_gun_map(int map) { gun_map = map < 0 ? 0 : map > 2 ? 2 : map; }
+static void desktop_bounds(SDL_Rect *r)
+{
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0, any = 0;
+    for (int i = 0, n = SDL_GetNumVideoDisplays(); i < n; i++) {
+        SDL_Rect b; if (SDL_GetDisplayBounds(i, &b)) continue;
+        if (!any || b.x < x0) x0 = b.x;
+        if (!any || b.y < y0) y0 = b.y;
+        if (!any || b.x + b.w > x1) x1 = b.x + b.w;
+        if (!any || b.y + b.h > y1) y1 = b.y + b.h;
+        any = 1;
+    }
+    if (!any) { r->x = r->y = 0; r->w = 640; r->h = 480; return; }
+    r->x = x0; r->y = y0; r->w = x1 - x0; r->h = y1 - y0;
+}
+bool ss22_host_rawptr(float *nx, float *ny, bool *inside, uint32_t *buttons, unsigned *events)
+{
+    float x, y; int dx, dy;
+    if (!win || pic_r.w <= 0 || pic_r.h <= 0 || !eng_rawptr_state(&x, &y, &dx, &dy, buttons, events)) return false;
+    const eng_rawptr_info *in = eng_rawptr_at(eng_rawptr_selected()); if (!in) return false;
+    int ww, wh, dw, dh; SDL_GetWindowSize(win, &ww, &wh); SDL_GL_GetDrawableSize(win, &dw, &dh);
+    float px, py; bool edge;
+    if (in->abs) {
+        edge = x <= 0 || x >= 1 || y <= 0 || y >= 1;                 /* the device's own edge: pointed off the screen */
+        if (gun_map == 2) { px = x * ww; py = y * wh; }
+        else {
+            SDL_Rect sp; int wx = 0, wy = 0;
+            const int di = SDL_GetWindowDisplayIndex(win);
+            if ((gun_map == 1 || in->space == 1) && SDL_GetDisplayBounds(gun_map == 1 ? (di < 0 ? 0 : di) : 0, &sp) == 0) {}
+            else desktop_bounds(&sp);
+            const char *drv = SDL_GetCurrentVideoDriver();
+            if (drv && !strcmp(drv, "wayland")) { SDL_Rect wb; if (di >= 0 && SDL_GetDisplayBounds(di, &wb) == 0) { wx = wb.x; wy = wb.y; } }
+            else SDL_GetWindowPosition(win, &wx, &wy);
+            px = sp.x + x * sp.w - wx; py = sp.y + y * sp.h - wy;
+        }
+    } else {
+        static float rx = -1, ry;
+        if (rx < 0) { rx = ww / 2.0f; ry = wh / 2.0f; }
+        rx += dx; ry += dy;
+        rx = rx < 0 ? 0 : rx > ww - 1 ? (float)(ww - 1) : rx;
+        ry = ry < 0 ? 0 : ry > wh - 1 ? (float)(wh - 1) : ry;
+        px = rx; py = ry; edge = rx <= 0 || ry <= 0 || rx >= ww - 1 || ry >= wh - 1;
+    }
+    const float ddx = px * dw / (ww ? ww : 1), ddy = py * dh / (wh ? wh : 1);
+    *nx = (ddx - pic_r.x) / pic_r.w; *ny = (ddy - pic_r.y) / pic_r.h;
+    *inside = !edge && *nx >= 0 && *nx <= 1 && *ny >= 0 && *ny <= 1;
+    { static int dbg = -1, n; if (dbg < 0) dbg = getenv("TC2_GUNLOG") != NULL;     /* TC2_GUNLOG=1: the mapping, once a second */
+      if (dbg && ++n % 60 == 0) { int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy); SDL_Rect sp; desktop_bounds(&sp);
+          fprintf(stderr, "[GUN] map %d: device %.3f,%.3f -> window %.0f,%.0f of %dx%d (at %d,%d; desktop %d,%d %dx%d; picture %d,%d %dx%d) -> %.3f,%.3f%s\n",
+                  gun_map, x, y, px, py, ww, wh, wx, wy, sp.x, sp.y, sp.w, sp.h, pic_r.x, pic_r.y, pic_r.w, pic_r.h, *nx, *ny, *inside ? "" : " (off)"); } }
+    return true;
+}
+
+/* TWO PLAYERS ON THIS COMPUTER (src/tc2_link.c tc2_local2p_start, launch.sh --2p; $TC2_2P=1 the first copy, 2:<the first's display> the
+ * second): two monitors -- the second copy goes to the other monitor, in the same window mode; one monitor -- both windowed, side by side,
+ * the largest whole size that fits two. Nothing is saved: the player's own window settings come back next time. */
+static void place_2p(int side, int other_disp)
+{
+    const int nd = SDL_GetNumVideoDisplays();
+    if (nd >= 2) {
+        if (side != 2) return;
+        const int d = other_disp == 0 ? 1 : 0;
+        const int fs = g_eng_disp.winmode != 0;
+        if (fs) SDL_SetWindowFullscreen(win, 0);
+        SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED_DISPLAY(d), SDL_WINDOWPOS_CENTERED_DISPLAY(d));
+        if (fs) SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+        fprintf(stderr, "[HOST] two players on this computer: this is the second copy, on monitor %d%s\n", d + 1, fs ? " (fullscreen)" : "");
+        return;
+    }
+    SDL_Rect b; if (SDL_GetDisplayUsableBounds(0, &b)) { b.x = b.y = 0; b.w = 1280; b.h = 960; }
+    int k = 4, w = 0, h = 0;
+    for (; k >= 1; k--) { w = eng_disp_win_w(k); h = eng_disp_win_h(k); if (w * 2 <= b.w && h <= b.h) break; }
+    if (k < 1) { k = 1; w = eng_disp_win_w(1); h = eng_disp_win_h(1); }
+    if (g_eng_disp.winmode) { SDL_SetWindowFullscreen(win, 0); g_eng_disp.winmode = 0; }
+    SDL_SetWindowSize(win, w, h);
+    SDL_SetWindowPosition(win, side == 2 ? b.x + b.w - w : b.x, b.y + (b.h - h) / 2);
+    fprintf(stderr, "[HOST] two players on this computer: one monitor, %s half, %dx%d\n", side == 2 ? "right" : "left", w, h);
+}
+int tc2_window_local2p_place(void)                           /* the first copy, about to start the second: place this window; its monitor for the second */
+{
+    if (!win) return 0;
+    place_2p(1, 0);
+    const int d = SDL_GetWindowDisplayIndex(win);
+    return d < 0 ? 0 : d;
+}
+
 int tc2_window_active(void) { return win != NULL; }
 /* a fatal stop in a window: say so instead of just vanishing (the details are in the log / terminal) */
 void tc2_crash_box(const char *why)
 {
     if (!win) return;
     char m[512];
-    snprintf(m, sizeof m, "%s had to stop:\n\n%s\n\nYour settings and scores were not touched. Please report this, with %s.log if there is one.", tc2_game.title, why, tc2_game.tag);
+    const char *tc2_instance(void);
+    snprintf(m, sizeof m, "%s had to stop:\n\n%s\n\nYour settings and scores were not touched. Please report this, with %s%s.log if there is one.", tc2_game.title, why, tc2_game.tag, tc2_instance());
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, tc2_game.title, m, win);
 }
 
@@ -95,10 +190,25 @@ int tc2_window_open(int scale, int fullscreen)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    { static char cfg[64]; snprintf(cfg, sizeof cfg, "%s.cfg", tc2_game.tag); eng_disp_load(cfg, scale, fullscreen != 0); }
+    { const char *tc2_instance(void); static char cfg[64]; snprintf(cfg, sizeof cfg, "%s%s.cfg", tc2_game.tag, tc2_instance());
+      if (tc2_instance()[0]) {                           /* a second copy's first run: the first copy's settings, but its own gun (Controls > Gun device) */
+          FILE *f = fopen(cfg, "rb"); if (f) fclose(f);
+          else { char base[64]; snprintf(base, sizeof base, "%s.cfg", tc2_game.tag); FILE *in = fopen(base, "r"), *out = in ? fopen(cfg, "w") : NULL;
+                 if (in && out) { char line[256]; while (fgets(line, sizeof line, in)) if (strncmp(line, "gun_device", 10)) fputs(line, out); fprintf(stderr, "[HOST] %s made from %s\n", cfg, base); }
+                 if (in) fclose(in);
+                 if (out) fclose(out); } }
+      { const char *e = getenv("TC2_WINDOW"); int x, y, k;                 /* $TC2_WINDOW=x,y[,scale]: a window there (a launcher) */
+        if (e && sscanf(e, "%d,%d,%d", &x, &y, &k) == 3 && k >= 1 && k <= 4) scale = k; }
+      eng_disp_load(cfg, scale, fullscreen != 0); }
     g_eng_disp_light_gun = true;                 /* a light-gun game: the Display page shows the crosshair row */
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-    win = SDL_CreateWindow(tc2_game.window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    char title[96];                                      /* "Time Crisis II 0.9.3": the release in the title bar (a dev build: the name alone) */
+#ifdef TC2_VERSION
+    snprintf(title, sizeof title, "%s %s", tc2_game.window_title, TC2_VERSION);
+#else
+    snprintf(title, sizeof title, "%s", tc2_game.window_title);
+#endif
+    win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            eng_disp_win_w(g_eng_disp.scale), eng_disp_win_h(g_eng_disp.scale),
                            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (g_eng_disp.winmode ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (!win) { fprintf(stderr, "[HOST] window: %s\n", SDL_GetError()); return 0; }
@@ -106,12 +216,17 @@ int tc2_window_open(int scale, int fullscreen)
     if (!glc) { fprintf(stderr, "[HOST] OpenGL: %s\n", SDL_GetError()); return 0; }
     SDL_GL_MakeCurrent(win, glc);
     eng_disp_attach(win);
+    { const char *e = getenv("TC2_WINDOW"); int x, y;                      /* $TC2_WINDOW=x,y[,scale] */
+      if (e && sscanf(e, "%d,%d", &x, &y) == 2) { if (g_eng_disp.winmode) { SDL_SetWindowFullscreen(win, 0); g_eng_disp.winmode = 0; } SDL_SetWindowPosition(win, x, y); } }
+    { const char *e = getenv("TC2_2P"); int side = 0, od = 0;                /* $TC2_2P=1 | 2:<the first copy's monitor> */
+      if (e && sscanf(e, "%d:%d", &side, &od) >= 1 && (side == 1 || side == 2)) place_2p(side, od); }
     eng_vsync_init(&vs, win, getenv("TC2_VSYNC"));
     tc2_smooth_set(eng_cfg_int("motion_smooth", 0));
     eng_pace_reset(&pace);
     fprintf(stderr, "[HOST] OpenGL: %s; display %d Hz, %s\n", (const char *)glGetString(GL_RENDERER), vs.hz, eng_vsync_mode(&vs));
     if (!eng_ui_init(win, "Time Crisis II")) fprintf(stderr, "[HOST] no menu\n");
     ss22_input_init(&tc2_input_game);                    /* the controls (keys, mouse, light gun, pads) and the menu's Controls page */
+    eng_rawptr_attach(win);                              /* the gun on its own device: Windows raw input to this window (src/eng/eng_rawptr.c) */
     eng_ui_add_page(ss22_input_page());
     if (tc2_game.twin) {                                 /* the twin cabinet: which side this is, and online play (src/tc2_link.c) */
         void tc2_link_init(void); const eng_ui_page *tc2_link_page(void);
@@ -119,6 +234,10 @@ int tc2_window_open(int scale, int fullscreen)
         eng_ui_add_page(tc2_link_page());
         eng_ui_add_page(eng_net_ui_page());
     }
+#ifndef TC2_VERSION
+#define TC2_VERSION "dev"
+#endif
+    fprintf(stderr, "[HOST] %s %s, built %s; menu pages: File Display Audio Controls%s\n", tc2_game.title, TC2_VERSION, __DATE__, tc2_game.twin ? " Cabinet Online" : "");   /* a player's log names their build */
     (void)picture_rect(0);
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -302,6 +421,7 @@ static int pass(int new_frame)
       if (new_frame && at > 0 && ++n == at) { eng_ui_goto(mp, mr); eng_ui_set_open(true); ss22_input_neutral();
           for (const char *k = getenv("TC2_MENU_KEYS"); k && *k; k++) eng_ui_nav(*k); }
     }
+    eng_rawptr_poll();                                           /* the gun's own device, if one is chosen (Controls > Gun device) */
     if (eng_ui_is_open() || paused) ss22_input_neutral(); else if (new_frame) ss22_input_update();
     eng_vsync_want(&vs, g_eng_disp.fps);
     /* A FIXED PICTURE RATE (Display > Frame rate other than 60, Auto on a 60+ Hz display), the game running: POLLED PRESENTATION -- the

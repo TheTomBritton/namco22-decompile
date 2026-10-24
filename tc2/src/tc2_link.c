@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 #include "tc2_game.h"
 #include "eng/eng_cfg.h"
 extern uint32_t rr_frame;
@@ -148,7 +149,7 @@ void tc2_link_step(void)
 /* the transport's side */
 void tc2_link_arm(int on)
 {
-    if (dbg < 0) dbg = getenv("TC2_LINKLOG") != NULL;
+    if (dbg < 0) { const char *e = getenv("TC2_LINKLOG"); dbg = e ? (atoi(e) > 1 ? 2 : 1) : 0; }
     if (armed == (on != 0)) return;
     armed = on != 0; tx_busy = 0; txq_n = cur_n = 0; rxq_n = 0;
     if (dbg) fprintf(stderr, "[LINK] f%u C422 %s\n", rr_frame, armed ? "ARMED (the link is up)" : "unarmed (plain registers)");
@@ -160,6 +161,10 @@ void tc2_link_arm(int on)
     irq_update();
 }
 int tc2_link_armed(void) { return armed; }
+static int holding;
+static int coin_pending, coin_pulse;          /* coins put in while held, paid in after; the pulse being sent (frames left, + on / - off) */
+int tc2_link_hold_start(void) { return holding; }   /* src/tc2_h8.c: the coin, trigger and pedal are held off while 1 */
+int tc2_link_coin_inject(void) { return coin_pulse > 0; }   /* src/tc2_h8.c: a held coin being paid in */
 /* the frames transmitted since the last call, back to back (bit 8 ends each); returns the word count */
 int tc2_link_take(uint16_t *out, int max)
 {
@@ -190,25 +195,39 @@ void tc2_c422_load(unsigned k, uint16_t v) { reg[k & 7] = v; }   /* a MAME snaps
  *   TC2_NET_DISCOVER=1                             join the first LAN host found       TC2_NET_AUTOSTART=N (src/eng/net.c)
  *   TC2_NET_LEAD=n   stall-and-wait lead (default auto: 2 + the ping in frames)       TC2_LINKLOG=1   [LINK] lines */
 #include "eng/net.h"
+extern uint8_t tc2_ram[0x1000000];
 #define TC2_FRAME_SIZE 1024
 #define HIST 64
 static struct { uint16_t id; int n; uint16_t w[1024]; } hist[HIST];   /* our transmitted link frames, by id % HIST */
 static uint16_t next_id, rx_last; static int rx_have, net_on, in_session;
 static unsigned long n_tx_frames, n_tx_dup, n_rx_frames, n_rx_dup;
+static long lag_sum, lag_n; static int lag_max;               /* [LINK]: how many of our frames old the peer's payloads are on arrival */
+/* THE AGREED START (online only). The game's byte 0x802F3502 is the PARTNER's link state as this cabinet sees it (1 attract, 2 credited /
+ * selecting, 4 in a game). Measured (two linked copies, LAN and zonesync, both players shooting): the RIGHT player's kills count only when the
+ * LEFT cabinet starts its game first and the right joins once that game is under way (25 s later: both play linked through the stage); when the
+ * right starts first, or joins within ~6 s of the left, the right cabinet ends up showing its partner as "COM" and its kills stop counting
+ * (the score freezes, the enemies stand). So the right cabinet's trigger and pedal are held, until it is in a game, while the left has not been
+ * in its game for $TC2_JOIN_WAIT frames (default 1500 = 25 s). The COIN too: what decides it is when the right cabinet is CREDITED (credited
+ * 1.8 s into the left's game: broken; 20 s in: linked) -- coins put in while held are counted and paid in once the hold ends. Each payload's trailer carries the byte its sender sees, which tells the
+ * partner its OWN state. A partner on an older build sends no trailer: then nothing is held, as before. */
+static int self_st = -1;                       /* our state as the partner sees it (its trailer); -1 = unknown */
+static uint32_t p_since; static int p_prev = -1;   /* the frame the partner's state last changed */
 static void hint(const char *t, int frames) { void eng_ui_set_hint(const char *, int); eng_ui_set_hint(t, frames); }
 
 static void session_begin(int slot, int players)
 {
     if (slot < 0 || slot > 1) { fprintf(stderr, "[TC2] online: slot %d -- Time Crisis 2 links two cabinets; staying alone\n", slot); return; }
     tc2_link_id_force(slot);
-    rx_have = 0; next_id = 0; in_session = 1;
+    rx_have = 0; next_id = 0; in_session = 1; self_st = p_prev = -1; holding = 0; coin_pending = coin_pulse = 0;
+    memset(hist, 0, sizeof hist); n_tx_frames = n_tx_dup = n_rx_frames = n_rx_dup = 0;   /* a second session in this run: frame_out repeats the newest
+                                                                                         * frames it finds in the history -- the last session's, otherwise */
     tc2_link_arm(1);
     fprintf(stderr, "[TC2] online: cabinet %s (slot %d of %d) -- the link is up\n", slot ? "Right/Blue" : "Left/Red", slot, players);
     hint(slot ? "Linked: you are the RIGHT / BLUE cabinet" : "Linked: you are the LEFT / RED cabinet", 300);
 }
 static void session_end(void)
 {
-    in_session = 0; tc2_link_arm(0); tc2_link_id_force(-1);
+    in_session = 0; tc2_link_arm(0); tc2_link_id_force(-1); self_st = -1; holding = 0;
     fprintf(stderr, "[TC2] online: session over (link frames out %lu, in %lu, repeats %lu)\n", n_tx_frames, n_rx_frames, n_rx_dup);
     hint("The link is down: playing alone", 300);
 }
@@ -230,7 +249,7 @@ static int frame_out(uint8_t *buf)
     int k = 0, bytes = 1;                          /* the newest frames that fit, counted backwards */
     while (k < HIST && (unsigned long)k < n_tx_frames && k < 255) {
         const int sz = 4 + hist[(uint16_t)(next_id - 1 - k) % HIST].n;
-        if (bytes + sz > TC2_FRAME_SIZE) break;
+        if (bytes + sz > TC2_FRAME_SIZE - 8) break;     /* the last 8 bytes: the trailer (state, frame) */
         bytes += sz; k++;
     }
     buf[0] = (uint8_t)k; int o = 1;
@@ -239,12 +258,18 @@ static int frame_out(uint8_t *buf)
         buf[o++] = (uint8_t)(id >> 8); buf[o++] = (uint8_t)id; buf[o++] = (uint8_t)(hist[h].n >> 8); buf[o++] = (uint8_t)hist[h].n;
         for (int j = 0; j < hist[h].n; j++) buf[o++] = (uint8_t)hist[h].w[j];   /* the byte; bit 8 is set on the last word only */
     }
+    if (o <= TC2_FRAME_SIZE - 8) { buf[TC2_FRAME_SIZE - 8] = 'T'; buf[TC2_FRAME_SIZE - 7] = '2'; buf[TC2_FRAME_SIZE - 6] = tc2_ram[0x2F3502]; }   /* the agreed start */
+    if (o <= TC2_FRAME_SIZE - 4) { buf[TC2_FRAME_SIZE - 4] = (uint8_t)(rr_frame >> 24); buf[TC2_FRAME_SIZE - 3] = (uint8_t)(rr_frame >> 16);   /* the sender's frame: [LINK] lag */
+                                   buf[TC2_FRAME_SIZE - 2] = (uint8_t)(rr_frame >> 8); buf[TC2_FRAME_SIZE - 1] = (uint8_t)rr_frame; }
     return 1;
 }
 static void frame_in(int slot, const uint8_t *buf, uint32_t seq)
 {
     (void)seq;
     if (!in_session || slot == eng_net_slot()) return;
+    { const uint32_t sf = (uint32_t)buf[TC2_FRAME_SIZE - 4] << 24 | (uint32_t)buf[TC2_FRAME_SIZE - 3] << 16 | (uint32_t)buf[TC2_FRAME_SIZE - 2] << 8 | buf[TC2_FRAME_SIZE - 1];
+      if (sf) { const int lag = (int)(rr_frame - sf); lag_sum += lag; lag_n++; if (lag > lag_max) lag_max = lag; } }
+    if (buf[TC2_FRAME_SIZE - 8] == 'T' && buf[TC2_FRAME_SIZE - 7] == '2') self_st = buf[TC2_FRAME_SIZE - 6];
     const int k = buf[0]; int o = 1;
     for (int i = 0; i < k; i++) {
         if (o + 4 > TC2_FRAME_SIZE) return;
@@ -266,12 +291,72 @@ static eng_net_game net_game = {
     session_begin, session_end, frame_out, frame_in, hint, slot_label,
 };
 
+/* ---------------- TWO PLAYERS ON THIS COMPUTER, ONE CLICK (Online > "Second player on this computer", launch.sh --2p, $TC2_LOCAL2P=1) ----------------
+ * The arcade's LINK PLAY with both cabinets on one PC: this copy hosts a LAN game and starts a SECOND COPY of itself ($TC2_INSTANCE=2:
+ * its own tc2_2.cfg -- made from ours, without our gun -- tc2_2_backup.nv, tc2_2_last.rec, tc2_2.log) that finds the LAN game and joins;
+ * both are set to Ready and the game starts by itself once the two are in. Each copy reads ITS OWN gun (src/eng/eng_rawptr.h): ours is
+ * Controls > Gun device, the second copy gets the first other device, or picks on its own Controls page. The windows: two monitors --
+ * one each; one monitor -- side by side (src/tc2_window.c place_2p). The second copy is the Right/Blue cabinet (lobby slot 1). */
+#include "eng/eng_rawptr.h"
+#ifdef _WIN32
+static void envset(const char *k, const char *v) { SetEnvironmentVariableA(k, v); }
+static bool spawn_self(char *why, size_t n)
+{
+    wchar_t exe[MAX_PATH]; if (!GetModuleFileNameW(NULL, exe, MAX_PATH)) { snprintf(why, n, "GetModuleFileName failed"); return false; }
+    wchar_t cmd[MAX_PATH + 16]; _snwprintf(cmd, MAX_PATH + 16, L"\"%ls\" --window", exe);
+    STARTUPINFOW si; memset(&si, 0, sizeof si); si.cb = sizeof si; PROCESS_INFORMATION pi;
+    if (!CreateProcessW(exe, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) { snprintf(why, n, "CreateProcess failed (%lu)", (unsigned long)GetLastError()); return false; }
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    return true;
+}
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#include <errno.h>
+static void envset(const char *k, const char *v) { if (v) setenv(k, v, 1); else unsetenv(k); }
+static bool spawn_self(char *why, size_t n)               /* the AppImage itself when we are one, else our own binary; forked twice so no zombie waits */
+{
+    char exe[1024]; const char *ai = getenv("APPIMAGE");
+    if (ai && *ai) snprintf(exe, sizeof exe, "%s", ai);
+    else { const ssize_t k = readlink("/proc/self/exe", exe, sizeof exe - 1); if (k <= 0) { snprintf(why, n, "cannot find my own program file"); return false; } exe[k] = 0; }
+    const pid_t p = fork();
+    if (p < 0) { snprintf(why, n, "fork: %s", strerror(errno)); return false; }
+    if (p == 0) { if (fork() == 0) { execl(exe, exe, "--window", (char *)NULL); _exit(127); } _exit(0); }
+    int st; waitpid(p, &st, 0);
+    return true;
+}
+#endif
+static bool local2p_start(char *msg, size_t n)
+{
+    if (!tc2_game.twin || !net_on) { snprintf(msg, n, "not a twin-cabinet game"); return false; }
+    if (link_id_forced >= 0) { snprintf(msg, n, "Already in a linked game."); return false; }
+    if (!eng_net_hosting() && !eng_net_host_start()) { snprintf(msg, n, "Could not host: UDP port %d is busy (another copy running?).", ENG_NET_PORT); return false; }
+    eng_net_set_autostart(2);
+    char gun[160] = ""; const int me = eng_rawptr_selected();           /* the second copy's gun: the first device that is not ours */
+    for (int i = 0; i < eng_rawptr_count(); i++) if (i != me) { snprintf(gun, sizeof gun, "%s", eng_rawptr_at(i)->id); break; }
+    int tc2_window_local2p_place(void); const int disp = tc2_window_local2p_place();
+    char twop[32], nm[48]; snprintf(twop, sizeof twop, "2:%d", disp); snprintf(nm, sizeof nm, "%.13s 2", eng_net_name());
+    envset("TC2_INSTANCE", "2"); envset("TC2_2P", twop); envset("TC2_NET_DISCOVER", "1"); envset("TC2_NET_AUTOSTART", "2"); envset("TC2_NET_NAME", nm);
+    envset("TC2_GUN_DEVICE", gun[0] ? gun : NULL); envset("TC2_LOCAL2P", NULL); envset("TC2_NET_HOST", NULL); envset("TC2_NET_SERVER", NULL);
+    char why[160] = ""; const bool ok = spawn_self(why, sizeof why);
+    envset("TC2_INSTANCE", NULL); envset("TC2_2P", NULL); envset("TC2_NET_DISCOVER", NULL); envset("TC2_NET_AUTOSTART", NULL); envset("TC2_NET_NAME", NULL); envset("TC2_GUN_DEVICE", NULL);
+    if (!ok) { snprintf(msg, n, "Could not start a second copy: %s", why); eng_net_set_autostart(0); return false; }
+    fprintf(stderr, "[TC2] two players on this computer: hosting, second copy started (its gun: %s)\n", gun[0] ? gun : me < 0 ? "none chosen -- both copies read every gun until one is picked" : "none left");
+    snprintf(msg, n, "Second copy started: it joins this game by itself and the game starts when both are in. Put a coin in each window (5).%s",
+             me < 0 ? " Pick this copy's gun in Controls > Gun device." : "");
+    hint("Starting the second player's copy...", 240);
+    return true;
+}
+bool tc2_local2p_start(char *msg, size_t n) { return local2p_start(msg, n); }
+
 /* once at start-up, after the cfg is loaded: the client (inert until the menu or $TC2_NET_* connects it) */
 void tc2_link_init(void)
 {
     if (!tc2_game.twin || net_on) return;
-    if (dbg < 0) dbg = getenv("TC2_LINKLOG") != NULL;
+    if (dbg < 0) { const char *e = getenv("TC2_LINKLOG"); dbg = e ? (atoi(e) > 1 ? 2 : 1) : 0; }
     eng_net_init(&net_game); net_on = 1;
+    { void eng_net_ui_set_local2p(bool (*)(char *, size_t), const char *, const char *);
+      eng_net_ui_set_local2p(local2p_start, "Second player on this computer", "two guns, one each (Controls > Gun device)"); }
     const char *srv = getenv("TC2_NET_SERVER"), *hst = getenv("TC2_NET_HOST"), *dsc = getenv("TC2_NET_DISCOVER"), *nm = getenv("TC2_NET_NAME");
     if (nm && *nm) eng_net_set_name(nm);
     if (hst && *hst == '1') eng_net_host_start();
@@ -279,7 +364,6 @@ void tc2_link_init(void)
     else if (srv && *srv && eng_net_set_server(srv)) eng_net_connect();
 }
 /* once a game frame (src/tc2_main.c tc2_on_vblank): the client, then stall-and-wait so neither cabinet runs ahead of the other */
-extern uint8_t tc2_ram[0x1000000];
 static unsigned ram16(uint32_t a) { return (unsigned)(tc2_ram[a & 0xFFFFFF] << 8 | tc2_ram[(a + 1) & 0xFFFFFF]); }
 void tc2_link_frame(void)
 {
@@ -287,12 +371,52 @@ void tc2_link_frame(void)
         fprintf(stderr, "[LINK] f%u len %u state %u silent %u resend %d seq %u | C422 st %04X mask %04X ctl %04X cnt %04X rx %04X tx %04X%s\n", rr_frame,
                 ram16(0x2F3910), tc2_ram[0x2F3502], ram16(0x2F3504), (int16_t)ram16(0x2CEDE6), ram16(0x2CEDD8),
                 reg[0], reg[1], reg[3], reg[5], reg[6], reg[7], armed ? " ARMED" : "");
+    if (dbg) { static unsigned prev = 0x100; const unsigned stt = tc2_ram[0x2F3502];   /* the game's link state: when it changes, with the wall clock (two copies compare) */
+        if (stt != prev) { long long ms = 0;
+#ifndef _WIN32
+            struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#endif
+            fprintf(stderr, "[LINKST] f%u state %u -> %u at %lld ms\n", rr_frame, prev, stt, ms); prev = stt; } }
+    static long lb_from = -1, lb_to; if (lb_from < 0) { const char *e = getenv("TC2_LINKB"); lb_from = 1300; lb_to = 2400; if (e) sscanf(e, "%ld-%ld", &lb_from, &lb_to); }
+    if (dbg > 1 && rr_frame >= (uint32_t)lb_from && rr_frame <= (uint32_t)lb_to) {   /* $TC2_LINKLOG=2: the game's link block 0x802F3500.. every frame (a linked-vs-COM start, side by side) */
+        fprintf(stderr, "[LINKB] f%u", rr_frame);
+        for (int i = 0; i < 0x20; i++) fprintf(stderr, "%s%02X", i % 4 ? "" : " ", tc2_ram[0x2F3500 + i]);
+        fprintf(stderr, " |"); for (int i = 0; i < 0x10; i++) fprintf(stderr, "%s%02X", i % 4 ? "" : " ", tc2_ram[0x2F3910 + i]);
+        fprintf(stderr, "\n");
+    }
     if (!net_on) return;
+    { static int at = -2;                                 /* $TC2_LOCAL2P=1 (launch.sh --2p): the one-click local two-player start, once the window is up */
+      if (at == -2) { const char *e = getenv("TC2_LOCAL2P"); at = e && *e == '1' ? 60 : -1; }
+      if (at > 0 && rr_frame >= (uint32_t)at) { at = -1; char m[200]; int tc2_window_active(void); if (tc2_window_active()) { local2p_start(m, sizeof m); fprintf(stderr, "[TC2] %s\n", m); } } }
     eng_net_poll();
+    if (in_session) {                                   /* the agreed start (above): who may start now */
+        static long wait = -1; if (wait < 0) { const char *e = getenv("TC2_JOIN_WAIT"); wait = e ? atol(e) : 1500; }
+        const int pst = tc2_ram[0x2F3502];
+        if (pst != p_prev) { p_prev = pst; p_since = rr_frame; }
+        int h = 0;                                      /* the right cabinet joins the left: never first, and not until the left's game is under way */
+        if (eng_net_slot() == 1 && self_st >= 0 && self_st != 4 && !(pst == 4 && rr_frame - p_since >= (uint32_t)wait)) h = 1;
+        { extern uint16_t tc2_inputs; static int prev_coin;   /* coins while held: counted, then paid in 4 frames on / 36 off each */
+          const int c = tc2_inputs & 0x0001;
+          if (h && c && !prev_coin) coin_pending++;
+          prev_coin = c;
+          if (coin_pulse > 0) { if (--coin_pulse == 0) coin_pulse = -36; }
+          else if (coin_pulse < 0) coin_pulse++;
+          else if (!h && coin_pending > 0) { coin_pending--; coin_pulse = 4; } }
+        if (h != holding) {
+            holding = h;
+            if (dbg) fprintf(stderr, "[LINKST] f%u start %s (us %d, partner %d)\n", rr_frame, h ? "HELD" : "free", self_st, pst);
+            if (h || self_st != 4) hint(h ? (pst == 4 ? "The left player's game is starting -- you can join in a moment" : "Linked: the LEFT player starts first, then you join")
+                   : "Linked: press the trigger to join your partner", h ? 600 : 300);
+        }
+    }
     if (in_session) {
         static int lead = -2; if (lead == -2) { const char *e = getenv("TC2_NET_LEAD"); lead = e ? atoi(e) : -1; }
         if (lead < 1000) eng_net_wait(lead < 0 ? eng_net_auto_lead() : lead, 1000);
-        if (dbg && rr_frame % 600 == 0) fprintf(stderr, "[LINK] f%u link frames out %lu (+%lu resends), in %lu (repeats %lu), ping %d ms\n", rr_frame, n_tx_frames, n_tx_dup, n_rx_frames, n_rx_dup, eng_net_ping_ms());
+        if (dbg && rr_frame % (dbg > 1 ? 60 : 600) == 0) {
+            fprintf(stderr, "[LINK] f%u link frames out %lu (+%lu resends), in %lu (repeats %lu), ping %d ms, peer payload age %.1f frames (max %d), %d words waiting for the ring\n",
+                    rr_frame, n_tx_frames, n_tx_dup, n_rx_frames, n_rx_dup, eng_net_ping_ms(), lag_n ? (double)lag_sum / lag_n : 0.0, lag_max, rxq_n);
+            lag_sum = lag_n = 0; lag_max = 0;
+        }
     }
 }
 void tc2_link_paused(void) { if (net_on) eng_net_poll_paused(); }   /* the menu is open: keep the session alive, send nothing */
@@ -312,7 +436,8 @@ static void cab_notes(void (*line)(const char *, ...))
     line("Two cabinets side by side: Left/Red (Richard)");
     line("and Right/Blue (Keith). Alone, play either one;");
     line("it takes effect at the next game. Online, the");
-    line("session picks the side (Online page).");
+    line("session picks the side (Online page). Two guns on");
+    line("this PC: Online > Second player on this computer.");
 }
 static const eng_ui_page cab_page = { "Cabinet", 420, 140, 0, cab_rows, NULL, cab_enabled, cab_text, cab_change, cab_notes };
 const eng_ui_page *tc2_link_page(void) { return &cab_page; }

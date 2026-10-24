@@ -6,4 +6,9 @@
 #define ENG_NET_UI_H
 #include "eng_ui.h"
 const eng_ui_page *eng_net_ui_page(void);
+#include <stdbool.h>
+#include <stddef.h>
+/* a game's one-click "second player on this computer" (Time Crisis 2): the hook starts it and says what happened in msg; shown as a
+ * row of the page and a button in the Online window while set */
+void eng_net_ui_set_local2p(bool (*start)(char *msg, size_t n), const char *label, const char *note);
 #endif

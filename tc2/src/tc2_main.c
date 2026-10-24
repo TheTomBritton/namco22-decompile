@@ -196,7 +196,8 @@ static void session_rec(uint32_t frame)
         if (r) { rep = fopen(r, "r"); fprintf(stderr, rep ? "[REC] replaying %s\n" : "[REC] cannot read %s\n", r); }
         else { int tc2_window_active(void);
                if (tc2_window_active()) {                  /* <tag>_last.rec / <tag>_prev.rec: tc2_..., crszone_... (the game table's tag) */
-                   char last[64], prev[64]; snprintf(last, sizeof last, "%s_last.rec", tc2_game.tag); snprintf(prev, sizeof prev, "%s_prev.rec", tc2_game.tag);
+                   const char *tc2_instance(void);
+                   char last[64], prev[64]; snprintf(last, sizeof last, "%s%s_last.rec", tc2_game.tag, tc2_instance()); snprintf(prev, sizeof prev, "%s%s_prev.rec", tc2_game.tag, tc2_instance());
                    rename(last, prev); rec = fopen(last, "w");
                    if (rec) { fprintf(rec, "# TC2 session: F frame inputs gunx guny off\n"); fprintf(stderr, "[REC] recording the inputs to %s\n", last); } } }
     }
@@ -273,6 +274,15 @@ void tc2_host_step(uint32_t n)
 }
 uint32_t tc2_until_event(void) { return tc2_screen_until_event(); }
 
+/* A SECOND COPY OF THE GAME ON THIS COMPUTER ($TC2_INSTANCE=2, the second player of a local LINK PLAY: src/tc2_link.c tc2_local2p_start,
+ * launch.sh --2p) keeps its own settings, backup RAM, recordings and log: "_2" on each name (tc2_2.cfg, tc2_2_backup.nv, tc2_2_last.rec,
+ * tc2_2.log). "" for the first copy, so every existing file name is unchanged. */
+const char *tc2_instance(void)
+{
+    static char suf[16]; static int init;
+    if (!init) { init = 1; const char *e = getenv("TC2_INSTANCE"); const int n = e ? atoi(e) : 0; if (n >= 2 && n <= 99) snprintf(suf, sizeof suf, "_%d", n); }
+    return suf;
+}
 int main(int argc, char **argv)
 {
 #ifdef _WIN32
@@ -280,7 +290,7 @@ int main(int argc, char **argv)
      * backup RAM), and with no console the log goes to tc2.log beside the .exe (what the crash message points at) */
     { wchar_t wp[MAX_PATH]; DWORD n = GetModuleFileNameW(NULL, wp, MAX_PATH);
       if (n > 0 && n < MAX_PATH) { wchar_t *sl = wcsrchr(wp, L'\\'); if (sl) { *sl = 0; _wchdir(wp); } } }
-    freopen("tc2.log", "w", stderr); setvbuf(stderr, NULL, _IONBF, 0);
+    { char lg[32]; snprintf(lg, sizeof lg, "tc2%s.log", tc2_instance()); freopen(lg, "w", stderr); setvbuf(stderr, NULL, _IONBF, 0); }
 #endif
     /* no arguments (a double-click, the player's launcher): the game in a window from power-on */
     static char *win_argv[] = { NULL, "--window", NULL };
