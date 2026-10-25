@@ -573,6 +573,18 @@ bool eng_gl_open_headless(int w, int h)
     }
     eng_gl_context_attributes();
     hl_win = SDL_CreateWindow("engine", 0, 0, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+#ifdef __APPLE__
+    if (!hl_win) {                                      /* macOS: the offscreen driver has no EGL to make OpenGL with, so a hidden window on the
+                                                         * desktop's driver instead -- as a background app, so a headless run never puts an icon
+                                                         * in the Dock or takes the focus from whoever is using the Mac */
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        SDL_SetHint("SDL_VIDEODRIVER", ""); setenv("SDL_VIDEODRIVER", "", 1);
+        SDL_SetHint("SDL_MAC_BACKGROUND_APP", "1");
+        if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "[GL] no video: %s\n", SDL_GetError()); return false; }
+        eng_gl_context_attributes();
+        hl_win = SDL_CreateWindow("engine", 0, 0, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    }
+#endif
     if (!hl_win) { fprintf(stderr, "[GL] no window: %s\n", SDL_GetError()); return false; }
 #ifdef _WIN32
     { extern SDL_GLContext eng_gl_create_win(SDL_Window **, const char **); const char *miss = NULL;
