@@ -4,6 +4,7 @@
 *.zip
 # Made by the build or the game.
 /build/
+/build-web/
 /build-win/
 /windows-release/
 /boot.bin

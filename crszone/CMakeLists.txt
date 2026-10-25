@@ -37,8 +37,30 @@ option(PORTABLE "Bind glibc symbols to baseline versions (runs on glibc >= 2.34)
 if(PORTABLE AND NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   add_compile_options(-include ${TC2_HOST_DIR}/include/glibc_compat.h)
 endif()
+if(EMSCRIPTEN)
+  # Browser build (emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release && cmake --build build-web), as ../tc2's: SDL2 + zlib
+  # from Emscripten's ports, WebGL2 with the fixed-function leftovers in the host's tc2_gl_web.c, JSPI so the frame pacer can suspend
+  # the wasm stack from inside the lifted program, the frame built inline at vblank (no worker thread). The page writes the
+  # player's crszone.zip into MEMFS before callMain (-sINVOKE_RUN=0); src/tc2_rom.c unpacks it as on a PC.
+  add_compile_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
+  list(APPEND CSZ_SRC ${TC2_HOST_DIR}/src/tc2_gl_web.c)
+  add_link_options(
+    -sUSE_SDL=2 -sUSE_ZLIB=1
+    -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+    -sGL_ENABLE_GET_PROC_ADDRESS=1
+    -sJSPI=1
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=536870912 -sSTACK_SIZE=8388608
+    -sMODULARIZE=1 -sEXPORT_NAME=createCrisisZone -sENVIRONMENT=web
+    -sINVOKE_RUN=0
+    -sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV)
+  add_executable(crszone ${CSZ_SRC})
+  target_include_directories(crszone PRIVATE include gen ${TC2_HOST_INCLUDE})
+  target_link_libraries(crszone m)
+  return()
+endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
+link_directories(${SDL2_LIBRARY_DIRS})   # macOS: Homebrew's /opt/homebrew/lib is not a default search path
 if(WIN32)
   set(ZLIB_USE_STATIC_LIBS ON)
 endif()
