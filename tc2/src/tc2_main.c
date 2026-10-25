@@ -109,6 +109,38 @@ static void scripted_inputs(uint32_t frame)
     }
 }
 
+/* $TC2_POKE = "ADDR=VAL[:SIZE][@FROM],..." (hex address and value, SIZE 1 / 2 / 4 bytes, default 1, FROM a frame): the values written into
+ * the game's memory at every frame from FROM on -- the cheat of the scripted play-throughs, so a run that cannot aim still reaches the later
+ * stages. Time Crisis II, player 1: 2F43FF the magazine (9), 2F4401 the lives (4), 2F4402 the area timer (16 bits, in frames: hex 960 =
+ * 40 s); e.g. TC2_POKE=2F4401=4@2000,2F4402=960:2@2000. The page's ?env= splits on ',' and ':', so ';' and '.' do as well there. Give a
+ * FROM past the boot, as for Time Crisis's SS22_POKE (its power-on RAM test fails when the work RAM is poked under it). */
+static void scripted_pokes(uint32_t frame)
+{
+    static const char *spec; static int init;
+    if (!init) { init = 1; spec = getenv("TC2_POKE"); if (spec) fprintf(stderr, "[TC2] poking %s\n", spec); }
+    for (const char *p = spec; p && *p; ) {
+        unsigned a, v, sz = 1; unsigned long from = 0; int n = 0;
+        if (sscanf(p, "%x=%x%n", &a, &v, &n) < 2) break;
+        p += n;
+        if (*p == ':' || *p == '.') sz = (unsigned)strtoul(p + 1, (char **)&p, 10);
+        if (*p == '@') from = strtoul(p + 1, (char **)&p, 10);
+        if (frame >= from && (sz == 1 || sz == 2 || sz == 4)) rr_write(a, (int)sz, v);
+        while (*p && *p != ',' && *p != ';') p++;
+        if (*p) p++;
+    }
+}
+/* $TC2_RAMDUMP = "dir:every[@from[-to]]": the 16 MB of main RAM (as the board holds it, big-endian) to dir/fNNNNN.ram every N frames -- the
+ * dump-and-diff that finds the game's variables for TC2_POKE */
+static void ram_dumps(uint32_t frame)
+{
+    static char dir[512]; static unsigned every; static unsigned long from, to = ~0ul; static int init;
+    if (!init) { init = 1; const char *e = getenv("TC2_RAMDUMP"); if (e) { snprintf(dir, sizeof dir, "%s", e); char *c = strrchr(dir, ':');
+                 if (c) { *c = 0; if (sscanf(c + 1, "%u@%lu-%lu", &every, &from, &to) < 1) every = 0; } } }
+    if (!every || frame % every || frame < from || frame > to) return;
+    char p[700]; snprintf(p, sizeof p, "%s/f%05u.ram", dir, frame);
+    FILE *f = fopen(p, "wb"); if (f) { fwrite(tc2_ram, 1, sizeof tc2_ram, f); fclose(f); }
+}
+
 /* THE GPU GATE: $TC2_GPU_GATE=dir:every -- a hidden GL context in a headless run; every N frames the same built frame is drawn by the GPU
  * back end (src/tc2_gl.c) and by the software one (the oracle), both written as PPMs, and the difference reported */
 #include <SDL2/SDL.h>
@@ -223,6 +255,8 @@ static void session_rec(uint32_t frame)
 void tc2_on_vblank(uint32_t frame)
 {
     scripted_inputs(frame);
+    scripted_pokes(frame);
+    ram_dumps(frame);
     { static int tf = -2; static const char *tp; if (tf == -2) { const char *e = getenv("TC2_TEXTDUMP"); tf = -1; if (e) { tf = atoi(e); tp = strchr(e, ':'); if (tp) tp++; } }
       if (tf >= 0 && (int)frame == tf && tp) {   /* $TC2_TEXTDUMP=frame:file -- the C361 character RAM + tile map (0x06800000-0x0681FFFF), big-endian */
           uint8_t *tc2_vram_ptr(uint32_t); FILE *f = fopen(tp, "wb"); if (f) { fwrite(tc2_vram_ptr(0x06800000u), 1, 0x20000, f); fclose(f); } } }
