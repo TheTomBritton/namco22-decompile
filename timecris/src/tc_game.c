@@ -145,29 +145,91 @@ static void autoplay(long n, uint16_t *p, unsigned *wheel, unsigned *pedal1, uns
 /* TEST SWITCHES, to reach the later levels (environment variables, read once). Work RAM, found by dumping it every second
  * through a played session (--dump-every 60):
  *   0xE00796  the area timer, in frames (TIME 26.83 on screen = 1609); 0 = time over
- *   0xE00733  the mode: 0 booting, 2 the attract demo (which runs on the same timer), 3 a game
+ *   0xE00733  the mode: 0 booting, 2 the attract demo (which runs on the same timer), 3 a game -- as first read; played further
+ *             it is not a mode: in a game it changes with the scenes (0, 2, 3 and 4 in stage 1; stages 2 and 3 start on 0), so
+ *             a game is also told by 0xE00798
+ *   0xE00798  1 from the coins to the game over, 0 in the attract
  *   0xE00791  lives left (the LIFE icons: set to 1, the HUD shows one)
- * TC_INF_TIME=1: in a game, the timer is topped up to 60 s whenever it falls under 10 s.
- * TC_INF_LIFE=1: in a game, a life lost is given back (up to the most this game has had, so an operator's 5 stays 5).
+ * The scenes (2026-10-25, the RAM diffed across the attract demo's scene changes, then the game loop at 0x16650 read in the lift).
+ * The program plays an area as a run of scenes: the camera travels to a scene (the loop at 0x166C6, until the arrival flag is
+ * set), then the scene's script runs as a coroutine (its resume address at 0xE00720, called from 0x161EE every frame) and spawns
+ * the scene's enemies, and the scene is over when the script has finished AND its spawn list is used up (the loop at 0x1679C):
+ *   0xE03B10  word: 1 while the camera travels, 0 at a scene
+ *   0xE03B14  word: the scene counter, +1 at every scene (0x16758, 0x16866)
+ *   0xE03B16  word: +1 at the end of each run of scenes that empties 0xE03B12 (0x1687C)
+ *   0xE0D169  byte: the camera has arrived at the scene
+ *   0xE0D156  byte: the scene's script has finished (its enemies are down); the scripts set it themselves (st at 0x536FC ...)
+ *   0xE0D15B  byte: set by 0x1B338 every frame once the scene's spawn list is used up; the loop ends the scene on both
+ *   0xE01B4C  word: the stage, 0..2 (the TIMED GAME's stage select writes it)
+ * TC_INF_TIME=1: in a game (mode 3, or coined up), the timer is topped up to 60 s whenever it falls under 10 s.
+ * TC_INF_LIFE=1: in a mode-3 game, a life lost is given back (up to the most this game has had, so an operator's 5 stays 5).
+ * The enemies are actors: a linked list in the actor pool at 0xE1B21C (the first actor's offset, a signed word, at 0xE0001C; an
+ * actor's +4 is the next one's offset, 0 ends the list, +6 its flags). Bit 8 of the flags marks an enemy (0x4828 counts them,
+ * 0x4864 is the scripts' "all down?"); bit 5 is a hit. 0x1625C is a kill-all that nothing in the program calls (no jsr or bsr
+ * reaches it, no pointer in the ROM names it; a leftover debug routine, it looks like): it sets bit 5
+ * on every enemy and adds 10000 to the scene's clock (word 0xE0072C, +1 a frame; a script spawns each enemy when the clock
+ * passes the enemy's time, 0x4806), so the enemies still to come are spawned at once.
+ * TC_KILL_ALL=N: in a game, N frames after the camera has arrived at a scene, that kill-all; then again every 30 frames until the
+ * camera moves on, for the enemies it spawned. The scene ends the game's own way (its script sees them all down), so a
+ * scripted run that cannot aim travels the whole game, and each scene's enemies have N frames to show themselves first.
+ * (Setting the end-of-scene flags 0xE0D156 / 0xE0D15B instead skips the scene but misses the end of an area, where the script
+ * also sets 0xE0D157: the loop then loads a next scene that is not there and jumps through 0x010EBB1B, a piece of code.)
  * Never before frame 600: the power-on RAM test checks this memory, and a write during it fails the boot (WORK RAM NG). */
 #define TC_W_TIMER 0x0796
 #define TC_W_MODE  0x0733
+#define TC_W_COINED 0x0798
 #define TC_W_LIVES 0x0791
+#define TC_W_TRAVEL 0x3B10
+#define TC_W_SCENE  0x3B14
+#define TC_W_ARRIVED 0xD169
+#define TC_W_FIRST  0x001C
+#define TC_W_ACTORS 0x1B21C
+#define TC_W_CLOCK  0x072C
 static uint16_t wram16(uint32_t a) { return (uint16_t)(g_ss22.wram[a] << 8 | g_ss22.wram[a + 1]); }
 static void wram16_set(uint32_t a, uint16_t v) { g_ss22.wram[a] = (uint8_t)(v >> 8); g_ss22.wram[a + 1] = (uint8_t)v; }
+/* 0x1625C, from the host: bit 5 (a hit) on every enemy in the actor list, and the scene's clock moved on 10000 frames when `spawn` */
+static void tc_kill_all(bool spawn)
+{
+    if (spawn) wram16_set(TC_W_CLOCK, (uint16_t)(wram16(TC_W_CLOCK) + 10000));
+    uint16_t off = wram16(TC_W_FIRST);
+    for (int guard = 0; off && guard < 1024; guard++) {
+        const uint32_t a = (uint32_t)(TC_W_ACTORS + (int16_t)off);
+        if (a + 8 > SS22_WRAM_SIZE) break;
+        if (g_ss22.wram[a + 6] & 1) wram16_set(a + 6, wram16(a + 6) | 0x20);
+        off = wram16(a + 4);
+    }
+}
+
 static void tc_frame(long n)
 {
-    static int inf_time = -1, inf_life, most_lives;
+    static int inf_time = -1, inf_life, most_lives, kill_after;
     static int lives_log = -1, last_mode = -1, last_lives = -1;
-    if (inf_time < 0) { inf_time = getenv("TC_INF_TIME") != NULL; inf_life = getenv("TC_INF_LIFE") != NULL; }
+    static int last_scene = -1; static long at_scene;
+    if (inf_time < 0) {
+        inf_time = getenv("TC_INF_TIME") != NULL; inf_life = getenv("TC_INF_LIFE") != NULL;
+        const char *e = getenv("TC_KILL_ALL"); kill_after = e ? atoi(e) : 0;
+    }
     if (lives_log < 0) lives_log = getenv("TC_LIVESLOG") != NULL;            /* TC_LIVESLOG=1: the mode and lives byte on every change */
     if (lives_log && n >= 600 && (g_ss22.wram[TC_W_MODE] != last_mode || g_ss22.wram[TC_W_LIVES] != last_lives)) {
         last_mode = g_ss22.wram[TC_W_MODE]; last_lives = g_ss22.wram[TC_W_LIVES];
         fprintf(stderr, "[LIVES] frame %ld mode %d lives %d\n", n, last_mode, last_lives);
     }
-    if (n < 600 || g_ss22.wram[TC_W_MODE] != 3) { most_lives = 0; return; }
+    const bool mode3 = g_ss22.wram[TC_W_MODE] == 3;
+    if (n < 600 || (!mode3 && g_ss22.wram[TC_W_COINED] != 1)) { most_lives = 0; last_scene = -1; return; }
+    if (kill_after > 0) {
+        const int sc = wram16(TC_W_SCENE);
+        if (sc != last_scene) { last_scene = sc; at_scene = 0; }
+        if (wram16(TC_W_TRAVEL) == 0 && g_ss22.wram[TC_W_ARRIVED]) {
+            const long t = ++at_scene - kill_after;
+            if (t >= 0 && t % 30 == 0) {
+                tc_kill_all(t == 0);
+                if (lives_log && t == 0) fprintf(stderr, "[SCENE] frame %ld: stage %d scene %d, kill-all\n", n, wram16(0x1B4C) + 1, sc);
+            }
+        }
+    }
     if (inf_time) { const uint16_t t = wram16(TC_W_TIMER); if (t > 0 && t < 600) wram16_set(TC_W_TIMER, 3600); }
-    if (inf_life) {
+    if (inf_life && mode3) {                    /* on mode 3 only, as before: coined up includes the select screens, where a TIMED
+                                                 * GAME shows 3 lives before its game starts with 1 */
         const int l = g_ss22.wram[TC_W_LIVES];
         if (l > most_lives && l <= 9) most_lives = l;
         if (l < most_lives) g_ss22.wram[TC_W_LIVES] = (uint8_t)most_lives;
