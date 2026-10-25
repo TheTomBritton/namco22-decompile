@@ -19,6 +19,7 @@ extern const double g_stick_steer_curve[RR_STICK_N];
 extern int g_cfg_stick_steer;
 extern int g_cfg_fullscreen, g_cfg_scale, g_cfg_scaling, g_cfg_volume;
 extern int g_cfg_winmode, g_cfg_res_w, g_cfg_res_h, g_cfg_wide, g_cfg_aspect, g_cfg_draw, g_cfg_fps;
+extern int g_cfg_wide_169;                  /* widescreen's shape: 0 the window's, 1 16:9 */
 extern char g_cfg_net_server[128], g_cfg_net_name[24];   /* the Online page's server and lobby name */
 bool rr_input_set_option(const char *path, const char *key, const char *val);
 const char *rr_input_action_name(int a);
@@ -49,6 +50,8 @@ bool rr_input_write(const char *path);         /* write the defaults as a templa
 bool rr_input_replay_open(const char *path);
 bool rr_input_replaying(void);
 bool rr_input_record_start(const char *path);
+void rr_input_record_eeprom(const uint8_t *ee);      /* the boot's EEPROM into the recording (one `E` line)  */
+bool rr_input_replay_eeprom(uint8_t *ee);            /* a recording's EEPROM, if it has one */
 void rr_input_record_stop(void);
 bool rr_input_recording(void);
 void rr_input_frame(uint32_t frame);           /* apply replay / log recording */

@@ -21,6 +21,8 @@ typedef struct {
     const char *const *zips; int nzips;           /* the MAME zips searched (a split set keeps a device ROM in its own zip) */
     const eng_rom_t *chips; int nchips;           /* every ROM file: name, size, CRC (src/eng/romzip.c) */
 
+    int twin;                                     /* 1 = a TWIN-CABINET game (Time Crisis 2: Left/Red + Right/Blue on the C422 RS-422 link): the menu's
+                                                   * Cabinet choice (the I/O board's Link ID) and online play (src/tc2_link.c) */
     int evo2;                                     /* 1 = System 23 EVOLUTION 2: the chips at +0x10000000, 29-bit decode, C450 DMA, IRQ status regs */
     uint32_t clock;                               /* the main CPU, Hz (cycles as MAME charges them) */
     uint32_t px_num, px_den;                      /* pixel clocks (25.6 MHz) per main cycle, exactly */
@@ -56,6 +58,10 @@ typedef struct {
     int recoil_hold;                              /* 1 = 0x6002 bit 0 stays on WHILE the gun fires (Crisis Zone's machine gun: measured on a player's
                                                    * session, on for the whole burst), 0 = a 3-frame pulse per shot (Time Crisis 2) */
     int io_analog_out;                            /* 1 = the I/O board has MAME's namco_csz1 analog output at 0x6003 (Crisis Zone): published as analog0 */
+    /* the SPEECH, on its own gain (Audio > Voice volume, GitHub #46): a C352 voice in speech_voices, or a key-on from a sample bank in
+     * speech_bank_lo..speech_bank_hi (hi 0 = no range), is mixed as speech. Measured per game with C352_KEYLOG on a recorded session */
+    uint32_t speech_voices;
+    uint8_t speech_bank_lo, speech_bank_hi;
 } tc2_game_t;
 
 extern const tc2_game_t tc2_game;                 /* the one this binary was built for */

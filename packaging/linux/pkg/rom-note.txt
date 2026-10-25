@@ -1,6 +1,6 @@
 
  ==================================================================
-  Prop Cycle / Rave Racer / Tokyo Wars / Dirt Dash / Armadillo Racing / Time Crisis / Ace Driver / Cyber Commando / Cyber Sled / Time Crisis 2 are installed.  THE GAMES NEED ROM FILES.
+  Prop Cycle / Rave Racer / Tokyo Wars / Dirt Dash / Armadillo Racing / Time Crisis / Ace Driver / Cyber Commando / Cyber Sled / Time Crisis 2 / Crisis Zone are installed.  THE GAMES NEED ROM FILES.
  ==================================================================
   No game data is included. Put the MAME ROM sets here:
 
@@ -34,11 +34,14 @@
     Time Crisis 2:  timecrs2.zip
                  -> ~/.local/share/namco-2x-systems/tc2/roms/
 
+    Crisis Zone:  crszone.zip
+                 -> ~/.local/share/namco-2x-systems/crszone/roms/
+
   (Folders from an older namco22 install, ~/.local/share/namco22/, are used as they are.)
 
   (Each user has their own folder. Starting a game once creates it
    and opens it for you. Zips already in ~/Downloads are found
-   automatically.)  Then start "Prop Cycle", "Rave Racer", "Tokyo Wars", "Dirt Dash", "Armadillo Racing", "Time Crisis", "Ace Driver", "Cyber Commando", "Cyber Sled" or "Time Crisis 2"
-  from the applications menu, or run:  propcycle / raveracer / tokyowars / dirtdash / armadilloracing / timecrisis / acedriver / cybercommando / cybersled / timecrisis2
+   automatically.)  Then start "Prop Cycle", "Rave Racer", "Tokyo Wars", "Dirt Dash", "Armadillo Racing", "Time Crisis", "Ace Driver", "Cyber Commando", "Cyber Sled", "Time Crisis 2" or "Crisis Zone"
+  from the applications menu, or run:  propcycle / raveracer / tokyowars / dirtdash / armadilloracing / timecrisis / acedriver / cybercommando / cybersled / timecrisis2 / crisiszone
  ==================================================================
 

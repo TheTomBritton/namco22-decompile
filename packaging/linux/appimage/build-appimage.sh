@@ -12,7 +12,7 @@ mkdir -p "$OUT"
 SDL=$(ldconfig -p | awk '/libSDL2-2.0.so.0 /{print $NF; exit}')
 [ -n "$SDL" ] || { echo "no libSDL2-2.0.so.0 to bundle"; exit 1; }
 # game: AppImage name | launcher key | binary | desktop/icon name
-for g in "PropCycle|prop|propcycl|propcycle" "RaveRacer|rave|rr|raveracer" "TokyoWars|tokyo|tw|tokyowars" "DirtDash|dirt|dd|dirtdash" "ArmadilloRacing|am|am|armadilloracing" "TimeCrisis|tc|tc|timecrisis" "AceDriver|ace|ad|acedriver" "CyberCommando|cc|cc|cybercommando" "CyberSled|cs|cs21|cybersled" "TimeCrisis2|tc2|tc2|timecrisis2"; do
+for g in "PropCycle|prop|propcycl|propcycle" "RaveRacer|rave|rr|raveracer" "TokyoWars|tokyo|tw|tokyowars" "DirtDash|dirt|dd|dirtdash" "ArmadilloRacing|am|am|armadilloracing" "TimeCrisis|tc|tc|timecrisis" "AceDriver|ace|ad|acedriver" "CyberCommando|cc|cc|cybercommando" "CyberSled|cs|cs21|cybersled" "TimeCrisis2|tc2|tc2|timecrisis2" "CrisisZone|csz|crszone|crisiszone"; do
     IFS='|' read -r NAME KEY BIN ICON <<EOF
 $g
 EOF

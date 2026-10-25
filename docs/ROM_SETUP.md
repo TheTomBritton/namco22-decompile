@@ -183,3 +183,28 @@ It checks all 30 chip files by name, size and CRC and copies them into `cybsled/
 `cy2-mpr-u.3j` / `cy2-mpr-l.1j` (master) and `cy2-spr-u.6c` / `cy2-spr-l.4c` (slave). The installed packages and the Windows version
 do this themselves the first time the game starts, from the three zips in the game's `roms` folder. The first build compiles the two
 68000 programs one at a time (about 3 GB of RAM for the larger). Compare your files with [ROM_CHECKSUMS.md](ROM_CHECKSUMS.md).
+
+## Time Crisis II
+
+Time Crisis II (Namco System 23) needs one MAME set: `timecrs2.zip` (US, TSS3 Ver.B). Give it to the build script:
+
+```bash
+tc2/build.sh /path/to/timecrs2.zip
+```
+
+It checks all 22 chip files by name, size and CRC and copies them into `tc2/extracted/`; the MIPS program is `tss3verb.1` / `tss3verb.2`.
+The installed packages and the Windows version do this themselves the first time the game starts, from `timecrs2.zip` in the game's
+`roms` folder. Compare your files with [ROM_CHECKSUMS.md](ROM_CHECKSUMS.md).
+
+## Crisis Zone
+
+Crisis Zone (Namco System 23 Evolution 2) needs one MAME set: `crszone.zip` (World, CSZO4 Ver.B). Give it to the build script:
+
+```bash
+crszone/build.sh /path/to/crszone.zip
+```
+
+It checks all 23 chip files by name, size and CRC and copies them into `crszone/extracted/`; the MIPS program is `cszo4verb.ic4`. If your
+MAME set keeps the I/O board's program `csz1prg0a.8f` in a separate `namco_csz1.zip`, put that zip beside `crszone.zip` (or give both to
+the script). The installed packages and the Windows version do this themselves the first time the game starts, from the zips in the
+game's `roms` folder. Compare your files with [ROM_CHECKSUMS.md](ROM_CHECKSUMS.md).

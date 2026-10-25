@@ -35,6 +35,12 @@ typedef struct {
 /* the newest built frame (the window's renderer reads it on the main thread); NULL before the first */
 const tc2_built *tc2_built_latest(void);
 const tc2_built *tc2_built_latest_wait(void);          /* waits for the frame that just ended */
+const tc2_built *tc2_built_mid(int k);                 /* motion smoothing: in-between picture k (of tc2_built_mid_count(): 1 at 1/2, or 2 at 1/3 and 2/3)
+                                                        * of the step to tc2_built_latest(); NULL = none */
+int  tc2_built_mid_count(void);
+void tc2_smooth_rate(int pictures_per_s);            /* the window's picture rate: 150+ asks for two in-between frames */
+int  tc2_smooth_on(void);                              /* Display > Motion smoothing */
+void tc2_smooth_set(int on);
 
 /* the GPU back end (src/tc2_gl.c) */
 int  tc2_gl_init(void);                                /* after the window's GL context exists: 0 = not available (the software picture is used) */

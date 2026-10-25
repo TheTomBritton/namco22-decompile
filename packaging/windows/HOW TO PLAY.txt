@@ -103,7 +103,9 @@ KEYS -- CYBER COMMANDO  (Cyber Sled's layout)
   C             change view               F2          the operator's test switch
   Esc           menu (free play, volume, controls)
   F11           fullscreen                F12         screenshot
-  Pad: the left and right sticks are the cabinet's two sticks, A gun, B missile, Y view.
+  Pad: the left and right sticks are the cabinet's two sticks, A / RT gun, B / LT missile, Y view.
+  Two joysticks: Esc -> Controls, Enter on "Left stick up" and push the left joystick forward, and so on
+  for every direction of both sticks and every button (see TWO STICKS below).
 
 KEYS -- CYBER SLED
 ------------------
@@ -114,7 +116,17 @@ KEYS -- CYBER SLED
   C             change view               F2          the operator's test switch
   Esc           menu (Online: a battle against a friend over the internet or your network; Debug: developer screens)
   F12           screenshot
-  Pad: the left and right sticks are the two levers, A gun, B missile, Y view. The keys are fixed for now.
+  Pad: the left and right sticks are the two levers, A / RT gun, B / LT missile, Y view.
+  Two joysticks: Esc -> Controls (see TWO STICKS below).
+
+TWO STICKS -- CYBER SLED AND CYBER COMMANDO
+-------------------------------------------
+  Esc -> Controls binds each stick's up / down / left / right, the tank rows and every button.
+  Enter on a row, then press a key or button, push a hat or move a stick (Esc cancels).
+  Left clears a row, Right puts its defaults back.
+  A row takes two keys, two gamepad inputs and two joysticks (e.g. the trigger on each stick for Gun).
+  Two joysticks of the same model show as "#2" for the second one plugged in: plug them in in the
+  same order each time. "Stick deadzone" sets how far a stick moves before it counts.
 
 A game controller works in all of them; a wheel with force feedback works in Rave Racer and Ace Driver.
 

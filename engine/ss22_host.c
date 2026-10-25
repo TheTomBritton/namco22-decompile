@@ -17,6 +17,7 @@
 #include "eng_gl.h"
 #include "render_target.h"
 #include "ss22_gl.h"
+#include "eng_crosshair.h"
 #include "audio_out.h"
 #include "eng_display.h"
 #include "eng_ui.h"
@@ -200,6 +201,7 @@ static void present(void)
             glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0, dw, dh, 0, -1, 1);
             glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
             glDisable(GL_TEXTURE_2D); glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
+            if (!eng_xhair_draw(cx, cy, (float)gun_r.h))   /* Display > Crosshair image (engine/eng_crosshair.h), else the built-in cross */
             for (int pass = 0; pass < 2; pass++) {   /* a dark outline under a red cross, readable on any picture */
                 if (pass == 0) { glLineWidth(4.0f); glColor3f(0, 0, 0); } else { glLineWidth(2.0f); glColor3f(1, 0.1f, 0.1f); }
                 glBegin(GL_LINES);

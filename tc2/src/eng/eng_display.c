@@ -163,7 +163,11 @@ void eng_disp_load(const char *cfg_path, int scale, bool fullscreen)
       g_c352_gain_music = eng_cfg_int("music_volume", 100); g_c352_gain_fx = eng_cfg_int("effects_volume", 100);
       if (g_c352_gain_music < 0) g_c352_gain_music = 0; if (g_c352_gain_music > 100) g_c352_gain_music = 100;
       if (g_c352_gain_fx < 0) g_c352_gain_fx = 0; if (g_c352_gain_fx > 100) g_c352_gain_fx = 100;
-      const char *mv = eng_cfg_get("music_voices"); if (mv && *mv) g_c352_music_mask = (unsigned)strtoul(mv, NULL, 16); }
+      const char *mv = eng_cfg_get("music_voices"); if (mv && *mv) g_c352_music_mask = (unsigned)strtoul(mv, NULL, 16);
+      extern int g_c352_gain_voice; extern unsigned g_c352_speech_mask;                         /* Audio > Voice volume (GitHub #46) */
+      g_c352_gain_voice = eng_cfg_int("voice_volume", 100);
+      if (g_c352_gain_voice < 0) g_c352_gain_voice = 0; if (g_c352_gain_voice > 100) g_c352_gain_voice = 100;
+      const char *sv = eng_cfg_get("speech_voices"); if (sv && *sv) g_c352_speech_mask = (unsigned)strtoul(sv, NULL, 16); }
     if (scale > 0) d->scale = scale > 4 ? 4 : scale;             /* --window N overrides the saved size */
     if (fullscreen && !d->winmode) d->winmode = 1;
     if (getenv("ENG_WIDESCREEN")) d->wide = atoi(getenv("ENG_WIDESCREEN")) != 0;   /* tests: force it without touching the cfg */

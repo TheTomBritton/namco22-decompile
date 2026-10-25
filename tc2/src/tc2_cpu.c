@@ -221,6 +221,7 @@ static void account(void)
     tc2_advance_count((uint32_t)used);
     tc2_host_step((uint32_t)used);
 }
+extern void (*tc2_present_hook)(void);                                 /* src/tc2_window.c; NULL headless */
 void rr_tick(void)
 {
     account();
@@ -231,6 +232,7 @@ void rr_tick(void)
          * allocator then walked the blocks not yet freed (30x its usual work every ~55 frames). The prompt boards only (tc2_game.irq_prompt) */
         while (tc2_game.irq_prompt && rr_in_irq == 0 && irq_pending()) { take_exception(); account(); }
     }
+    if (tc2_present_hook) tc2_present_hook();                          /* the window: a picture tick due while the game runs (src/tc2_window.c) */
     const uint32_t ev = tc2_until_event();                             /* the next poll lands on the next interrupt event, not up to a slice late */
     granted = (int32_t)(ev && ev < TC2_SLICE ? ev : TC2_SLICE);
     rr_budget = granted;

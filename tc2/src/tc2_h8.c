@@ -226,11 +226,16 @@ static uint8_t io_switches(int n)                                  /* namcoio.cp
 {
     /* JVS_PLAYER1 (timecrs2): 0x01 gun trigger, 0x02 user enter, 0x10 user up, 0x20 user down, 0x8000 foot pedal, 0x4000 link ID (0 = left/red);
      * in_r: 0x6000 = ~(enter << 7 | up << 6 | down << 5 | test << 4 | counter connected << 2 | coin), 0x6001 = ~(pedal << 1 | trigger) */
-    const uint16_t in = tc2_inputs;
+    int tc2_link_hold_start(void);
+    int tc2_link_coin_inject(void);                 /* src/tc2_link.c: the agreed start -- the right cabinet waits for the left */
+    const uint16_t in = (uint16_t)((tc2_link_hold_start() ? tc2_inputs & ~(IN_COIN | IN_TRIGGER | IN_PEDAL) : tc2_inputs) | (tc2_link_coin_inject() ? IN_COIN : 0));
     if (n == 0)
         return (uint8_t)~((!!(in & IN_USR_ENTER)) << 7 | (!!(in & IN_USR_UP)) << 6 | (!!(in & IN_USR_DOWN)) << 5 | (!!(in & IN_TEST)) << 4
                         | 1 << 2 /* the coin counter is connected */ | (!!(in & IN_COIN)));
-    return (uint8_t)~((!!(in & IN_PEDAL)) << 1 | (!!(in & IN_TRIGGER)) | tc2_game.io_6001_held);
+    /* bit 2 = BUTTON4 = the LINK ID (MAME 0.289 timecrs2 "Link ID": off = Left/Red, on = Right/Blue -- which of the two twin cabinets
+     * this is; src/tc2_link.c: the menu's Cabinet setting, or the slot an online session gives) */
+    int tc2_link_id(void);
+    return (uint8_t)~((!!(in & IN_PEDAL)) << 1 | (!!(in & IN_TRIGGER)) | tc2_link_id() << 2 | tc2_game.io_6001_held);
 }
 static uint8_t io_gun(int off)                                      /* gun_r: X, Y, Y + 1 -- low bytes at 0..2, high bytes at 3..5 */
 {

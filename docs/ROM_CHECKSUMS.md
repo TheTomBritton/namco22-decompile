@@ -354,3 +354,62 @@ MAME set: `cybsled` (World, CY2), `namcoc67` and `namcoc68`. Unpacked chips end 
 | `cy2-spr-l.4c` | 524288 | `f519aa6495d765722c7daa6c3a69d289` | `4066291a` |
 | `cy2-spr-u.6c` | 524288 | `8e28d63abcd9b60147c35d44fafecacd` | `575a422d` |
 | `cybsled.nv` | 8192 | `671fef57adc93d69feada9f50f3ad784` | `aa18bf9e` |
+
+## Time Crisis II
+
+MAME set: `timecrs2` (US, TSS3 Ver.B). Unpacked chips end up in `tc2/extracted/`. 22 files.
+
+| File | Size | MD5 | CRC32 |
+|---|---:|---|---|
+| `tss1ccrh.7e` | 2097152 | `6a42384da3aeb1aa5e38f6015defbb6d` | `f998de1a` |
+| `tss1ccrl.7f` | 4194304 | `a1df84856600ebad532c23914afab1c5` | `3a325fe7` |
+| `tss1cgll.4m` | 8388608 | `67a3a8563a72dde5ebe98d8886fdb0ba` | `18433aaa` |
+| `tss1cglm.4k` | 8388608 | `757b4d3f6ab011cdb4ed813f680fe43a` | `669974c2` |
+| `tss1cgum.4j` | 8388608 | `f791c542b157effc7859d6ae78fc5992` | `c22739e1` |
+| `tss1cguu.4f` | 8388608 | `f5d94c8c7c2a6e96dfcc01bd2237cf35` | `76924e04` |
+| `tss1mtah.2j` | 8388608 | `70124b89b972bcc4157c2ac88a6ce718` | `697c26ed` |
+| `tss1mtal.2h` | 8388608 | `8b70fb75c64d251645fa6c0b44ade8d2` | `bfc79190` |
+| `tss1mtbh.2m` | 8388608 | `e3a70c5d76dea4e70a96ec47643a274e` | `82582776` |
+| `tss1mtbl.2f` | 8388608 | `653caa4af2c6be02f0648baa95d916c3` | `e648bea4` |
+| `tss1pt0h.7a` | 4194304 | `ea6e4766e4addb3c48f017821b16b7ce` | `cdbe0ba8` |
+| `tss1pt0l.7c` | 4194304 | `01c20b6470b02a2fe90a3b17a8f613c4` | `896f0fb4` |
+| `tss1pt1h.5a` | 4194304 | `35bdbb96dbff3645d54ef187ac7f3335` | `63647596` |
+| `tss1pt1l.5c` | 4194304 | `208c03507c9239debdc08e0ef1663f22` | `5a09921f` |
+| `tss1pt2h.4a` | 4194304 | `d33ba0afb6fe9f1a3104faa6ca656f6e` | `9b06e22d` |
+| `tss1pt2l.4c` | 4194304 | `1405a1ad95457cd465e5e522c64a9aa7` | `4b230d79` |
+| `tss1vera.3` | 524288 | `91dcca3b700c0f1c626138a1cc44cbd2` | `41e41994` |
+| `tss1waveh.2a` | 8388608 | `e0c5f92b23162bac5793332aca9f4423` | `5c8758b4` |
+| `tss1wavel.2c` | 8388608 | `4c4b10cbaab533a4badc0d4f28d01b01` | `deaead26` |
+| `tss3verb.1` | 2097152 | `825e2529c601b08f1dcbb43016410ee2` | `6e3f232b` |
+| `tss3verb.2` | 2097152 | `fe415802a9076f39493861f7de633d46` | `c7be691f` |
+| `tssioprog.ic3` | 262144 | `ff39548cd899ac1d01d1a2f96077c840` | `edad4538` |
+
+## Crisis Zone
+
+MAME set: `crszone` (World, CSZO4 Ver.B). Unpacked chips end up in `crszone/extracted/`. 23 files. If MAME keeps the I/O board's program (`csz1prg0a.8f`) in a separate `namco_csz1.zip`, put that beside `crszone.zip`.
+
+| File | Size | MD5 | CRC32 |
+|---|---:|---|---|
+| `csz1ccrh.7e` | 2097152 | `4e8631e4c5feef7f4bb58d0e503b705e` | `bc2fa03c` |
+| `csz1ccrl.7f` | 4194304 | `5618c9356eecdfe37ee2e8d78e561b07` | `1c20768d` |
+| `csz1cgll.4m` | 8388608 | `0ac875b81e3d7bd97ae97d150175f230` | `0bcd41f2` |
+| `csz1cglm.4k` | 8388608 | `a0e6901e2a6b557bc7e2d6e9ed6fa1b6` | `d4af93d1` |
+| `csz1cgum.4j` | 8388608 | `05123f52bf7faef780f2e4e9db86711f` | `913c98b5` |
+| `csz1cguu.5f` | 8388608 | `2de8240bd842f8fcaa447b06d166f625` | `e1d1bf24` |
+| `csz1mtah.2j` | 8388608 | `29f2acee88a116d7e8d80b6a151927c8` | `66b076ad` |
+| `csz1mtal.2h` | 8388608 | `b4b0b9103be7230e35ab5e0c48bbf57d` | `38dc639a` |
+| `csz1mtbh.2m` | 8388608 | `6ab0964bb30f6a805d03c5a4602dd276` | `bdec4188` |
+| `csz1mtbl.2f` | 8388608 | `c357f961409afc7d4847a130855b3f7e` | `9c8f8d7a` |
+| `csz1prg0a.8f` | 131072 | `52d170854516489d99e73c4c915fdefd` | `8edc36b3` |
+| `csz1pt0h.7a` | 4194304 | `2d4301665c7c3dc561919e0289bd9b8f` | `e82f1abb` |
+| `csz1pt0l.7c` | 4194304 | `95637dbecb45364403a342fb39fc086d` | `b0d66afe` |
+| `csz1pt1h.5a` | 4194304 | `faca4b01e136d850493a29bc2ef8c683` | `e54f80ad` |
+| `csz1pt1l.5c` | 4194304 | `5773879c23520a77984cc5316481c627` | `527171c8` |
+| `csz1pt2h.4a` | 4194304 | `a5286aedab68a3440fae1ce0477be2af` | `e295137a` |
+| `csz1pt2l.4c` | 4194304 | `3b083ec880f4c578fede3e864d8da4bd` | `c87d6dbd` |
+| `csz1pt3h.3a` | 4194304 | `42609386c6d62dd8a00aa7e21b3d2a4c` | `05f65bdf` |
+| `csz1pt3l.3c` | 4194304 | `86a0f31c0fb58838b99e66147d9c30d4` | `5d077c0f` |
+| `csz1waveh.2a` | 8388608 | `1440ee5df5da8a16070ce47475c49ff0` | `de9d14a8` |
+| `csz1wavel.2c` | 8388608 | `1edc748d021925313bca7393c021a4b6` | `d0d74132` |
+| `cszo3verb.ic1` | 524288 | `e5eff660b92812891cf6110f8806f9f0` | `c790743b` |
+| `cszo4verb.ic4` | 8388608 | `821af14d9188a0e464ab5c12c63a8a9d` | `6192533d` |
